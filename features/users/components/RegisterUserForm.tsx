@@ -1,11 +1,11 @@
-"use client"
+﻿"use client"
 
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
   RegisterRequestSchema,
   type RegisterRequest,
-} from "../types/userTypes"
+} from "../schema/userSchema"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -49,30 +49,18 @@ export function RegisterUserForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="firstname">First Name</Label>
-          <Input
-            id="firstname"
-            placeholder="First name"
-            {...register("firstname")}
-          />
-          {errors.firstname && (
-            <p className="text-sm text-destructive">
-              {errors.firstname.message}
-            </p>
-          )}
+          <Input id="firstname" placeholder="First name" {...register("firstname")} />
+          {errors.firstname ? (
+            <p className="text-sm text-destructive">{errors.firstname.message}</p>
+          ) : null}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="lastname">Last Name</Label>
-          <Input
-            id="lastname"
-            placeholder="Last name"
-            {...register("lastname")}
-          />
-          {errors.lastname && (
-            <p className="text-sm text-destructive">
-              {errors.lastname.message}
-            </p>
-          )}
+          <Input id="lastname" placeholder="Last name" {...register("lastname")} />
+          {errors.lastname ? (
+            <p className="text-sm text-destructive">{errors.lastname.message}</p>
+          ) : null}
         </div>
       </div>
 
@@ -84,9 +72,9 @@ export function RegisterUserForm({
           placeholder="user@company.com"
           {...register("email")}
         />
-        {errors.email && (
+        {errors.email ? (
           <p className="text-sm text-destructive">{errors.email.message}</p>
-        )}
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -94,56 +82,62 @@ export function RegisterUserForm({
         <Input
           id="password"
           type="password"
-          placeholder="••••••••"
+          placeholder="********"
           {...register("password")}
         />
-        {errors.password && (
+        {errors.password ? (
           <p className="text-sm text-destructive">{errors.password.message}</p>
-        )}
+        ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label>Department</Label>
-        <Select onValueChange={(val) => setValue("departmentId", val)}>
-          <SelectTrigger id="departmentId">
-            <SelectValue placeholder="Select department" />
-          </SelectTrigger>
-          <SelectContent>
-            {departments.map((dept) => (
-              <SelectItem key={dept.id} value={dept.id}>
-                {dept.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {errors.departmentId && (
-          <p className="text-sm text-destructive">
-            {errors.departmentId.message}
-          </p>
-        )}
-      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Department</Label>
+          <Select
+            onValueChange={(value) =>
+              setValue("departmentId", value, { shouldValidate: true })
+            }
+          >
+            <SelectTrigger id="departmentId" className="w-full">
+              <SelectValue placeholder="Select department" />
+            </SelectTrigger>
+            <SelectContent>
+              {departments.map((department) => (
+                <SelectItem key={department.id} value={department.id}>
+                  {department.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.departmentId ? (
+            <p className="text-sm text-destructive">{errors.departmentId.message}</p>
+          ) : null}
+        </div>
 
-      <div className="space-y-2">
-        <Label>Role</Label>
-        <Select onValueChange={(val) => setValue("roleId", val)}>
-          <SelectTrigger id="roleId">
-            <SelectValue placeholder="Select role" />
-          </SelectTrigger>
-          <SelectContent>
-            {roles.map((role) => (
-              <SelectItem key={role.id} value={role.id}>
-                {role.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {errors.roleId && (
-          <p className="text-sm text-destructive">{errors.roleId.message}</p>
-        )}
+        <div className="space-y-2">
+          <Label>Role</Label>
+          <Select
+            onValueChange={(value) => setValue("roleId", value, { shouldValidate: true })}
+          >
+            <SelectTrigger id="roleId" className="w-full">
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map((role) => (
+                <SelectItem key={role.id} value={role.id}>
+                  {role.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.roleId ? (
+            <p className="text-sm text-destructive">{errors.roleId.message}</p>
+          ) : null}
+        </div>
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Creating…" : "Register User"}
+        {isLoading ? "Creating..." : "Register User"}
       </Button>
     </form>
   )

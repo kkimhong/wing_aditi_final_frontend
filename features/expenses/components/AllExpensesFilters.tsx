@@ -48,7 +48,7 @@ export function AllExpensesFilters({
         <div className="space-y-2 xl:col-span-2">
           <Label htmlFor="expense-search">Search</Label>
           <div className="relative">
-            <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="expense-search"
               placeholder="Title, submitter, or department"
@@ -158,3 +158,4 @@ export function AllExpensesFilters({
     </section>
   )
 }
+

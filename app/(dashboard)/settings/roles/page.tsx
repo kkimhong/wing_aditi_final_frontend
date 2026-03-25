@@ -212,7 +212,7 @@ export default function RolesPage() {
       </section>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Card className="rounded-none">
+        <Card className="rounded-none stats-card">
           <CardHeader>
             <CardTitle className="text-xs text-muted-foreground">Roles</CardTitle>
           </CardHeader>
@@ -221,7 +221,7 @@ export default function RolesPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-none">
+        <Card className="rounded-none stats-card">
           <CardHeader>
             <CardTitle className="text-xs text-muted-foreground">Permissions Catalog</CardTitle>
           </CardHeader>
@@ -230,7 +230,7 @@ export default function RolesPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-none">
+        <Card className="rounded-none stats-card">
           <CardHeader>
             <CardTitle className="text-xs text-muted-foreground">Assigned Permissions</CardTitle>
           </CardHeader>
@@ -245,7 +245,7 @@ export default function RolesPage() {
 
       <section className="flex flex-col gap-3 rounded-none border bg-card p-4 md:flex-row md:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -341,3 +341,4 @@ function createId() {
 
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
+

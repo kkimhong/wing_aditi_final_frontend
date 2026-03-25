@@ -42,7 +42,7 @@ export function ApprovalSummaryCards({ expenses }: ApprovalSummaryCardsProps) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => (
-        <Card key={card.title} className="rounded-none">
+        <Card key={card.title} className="rounded-none stats-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">
               {card.title}
@@ -65,3 +65,4 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 0,
   }).format(value)
 }
+

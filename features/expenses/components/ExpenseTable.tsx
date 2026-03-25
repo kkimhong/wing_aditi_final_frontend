@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react"
 import {
   type ColumnDef,
+  type PaginationState,
   type SortingState,
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
@@ -25,6 +27,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ExpenseStatusBadge } from "./ExpenseStatusBadge"
 import { ArrowUpDown, MoreHorizontal } from "lucide-react"
 
@@ -56,6 +65,10 @@ export function ExpenseTable({
   emptyMessage = "No expenses found.",
 }: ExpenseTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
 
   const columns = useMemo<ColumnDef<ExpenseResponse>[]>(() => {
     const baseColumns: ColumnDef<ExpenseResponse>[] = [
@@ -226,11 +239,16 @@ export function ExpenseTable({
   const table = useReactTable({
     data: expenses,
     columns,
-    state: { sorting },
+    state: { sorting, pagination },
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
   })
+
+  const pageCount = Math.max(table.getPageCount(), 1)
+  const currentPage = Math.min(table.getState().pagination.pageIndex + 1, pageCount)
 
   return (
     <div className="rounded-none border bg-card">
@@ -274,6 +292,51 @@ export function ExpenseTable({
           )}
         </TableBody>
       </Table>
+
+      <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Rows per page</span>
+          <Select
+            value={String(table.getState().pagination.pageSize)}
+            onValueChange={(value) => table.setPageSize(Number(value))}
+          >
+            <SelectTrigger className="h-8 w-[84px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            Page {currentPage} of {pageCount}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

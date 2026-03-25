@@ -160,7 +160,9 @@ export function ExpenseForm({
             })}
           />
           {errors.currency && (
-            <p className="text-sm text-destructive">{errors.currency.message}</p>
+            <p className="text-sm text-destructive">
+              {errors.currency.message}
+            </p>
           )}
         </div>
       </div>
@@ -172,7 +174,7 @@ export function ExpenseForm({
           name="categoryId"
           render={({ field }) => (
             <Select value={field.value} onValueChange={field.onChange}>
-              <SelectTrigger id="categoryId">
+              <SelectTrigger id="categoryId" className="w-full">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
@@ -186,7 +188,9 @@ export function ExpenseForm({
           )}
         />
         {errors.categoryId && (
-          <p className="text-sm text-destructive">{errors.categoryId.message}</p>
+          <p className="text-sm text-destructive">
+            {errors.categoryId.message}
+          </p>
         )}
       </div>
 
@@ -194,7 +198,9 @@ export function ExpenseForm({
         <Label htmlFor="expenseDate">Date</Label>
         <Input id="expenseDate" type="date" {...register("expenseDate")} />
         {errors.expenseDate && (
-          <p className="text-sm text-destructive">{errors.expenseDate.message}</p>
+          <p className="text-sm text-destructive">
+            {errors.expenseDate.message}
+          </p>
         )}
       </div>
 
@@ -250,12 +256,18 @@ export function ExpenseForm({
         ) : null}
 
         {errors.receiptUrl && (
-          <p className="text-sm text-destructive">{errors.receiptUrl.message}</p>
+          <p className="text-sm text-destructive">
+            {errors.receiptUrl.message}
+          </p>
         )}
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Saving..." : defaultValues ? "Update Expense" : "Create Expense"}
+        {isLoading
+          ? "Saving..."
+          : defaultValues
+            ? "Update Expense"
+            : "Create Expense"}
       </Button>
     </form>
   )

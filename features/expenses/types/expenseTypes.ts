@@ -9,13 +9,8 @@ export const CreateExpenseRequestSchema = z.object({
   currency: z.string().length(3, "Must be 3-letter ISO code"),
   categoryId: z.string().uuid("Please select a category"),
   expenseDate: z.string().min(1, "Expense date is required"),
-  notes: z.string().max(500, "Notes too long").optional().nullable(),
-  receiptUrl: z
-    .string()
-    .url("Invalid URL")
-    .optional()
-    .nullable()
-    .or(z.literal("")),
+  notes: z.string().max(500, "Notes too long").nullish(),
+  receiptUrl: z.union([z.string().url("Invalid URL"), z.literal("")]).nullish(),
 })
 
 export const UpdateExpenseRequestSchema =

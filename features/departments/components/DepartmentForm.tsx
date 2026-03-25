@@ -1,11 +1,11 @@
-"use client"
+﻿"use client"
 
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
   DepartmentRequestSchema,
   type DepartmentRequest,
-} from "../types/departmentTypes"
+} from "../schema/departmentSchema"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -35,9 +35,9 @@ export function DepartmentForm({
       <div className="space-y-2">
         <Label htmlFor="name">Department Name</Label>
         <Input id="name" placeholder="Department name" {...register("name")} />
-        {errors.name && (
+        {errors.name ? (
           <p className="text-sm text-destructive">{errors.name.message}</p>
-        )}
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -47,21 +47,24 @@ export function DepartmentForm({
           type="number"
           step="0.01"
           placeholder="0.00"
-          {...register("budgetLimit", { valueAsNumber: true })}
+          {...register("budgetLimit", {
+            setValueAs: (value) => {
+              if (value === "" || value == null) {
+                return undefined
+              }
+
+              const parsed = Number(value)
+              return Number.isNaN(parsed) ? undefined : parsed
+            },
+          })}
         />
-        {errors.budgetLimit && (
-          <p className="text-sm text-destructive">
-            {errors.budgetLimit.message}
-          </p>
-        )}
+        {errors.budgetLimit ? (
+          <p className="text-sm text-destructive">{errors.budgetLimit.message}</p>
+        ) : null}
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading
-          ? "Saving…"
-          : defaultValues
-            ? "Update Department"
-            : "Add Department"}
+        {isLoading ? "Saving..." : defaultValues ? "Update Department" : "Add Department"}
       </Button>
     </form>
   )

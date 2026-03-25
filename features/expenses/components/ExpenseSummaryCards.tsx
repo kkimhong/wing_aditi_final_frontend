@@ -43,7 +43,7 @@ export function ExpenseSummaryCards({ expenses }: ExpenseSummaryCardsProps) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => (
-        <Card key={metric.title} className="rounded-none">
+        <Card key={metric.title} className="rounded-none stats-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">
               {metric.title}
@@ -66,3 +66,4 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 0,
   }).format(value)
 }
+

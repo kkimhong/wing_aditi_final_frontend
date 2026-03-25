@@ -7,12 +7,16 @@ import { ApprovalFilters, type ApprovalFiltersState } from "./ApprovalFilters"
 import { ApprovalSummaryCards } from "./ApprovalSummaryCards"
 import { RejectApprovalDialog } from "./RejectApprovalDialog"
 import { ApprovalExpenseDetailsDialog } from "./ApprovalExpenseDetailsDialog"
-import { mockApprovalExpenses } from "./approvalMockData"
 import type {
   ApprovalExpense,
   RejectApprovalRequest,
 } from "../schema/approvalSchema"
 import { useAuthStore } from "@/store/authStore"
+import { useApprovalsStore } from "@/store/approvalsStore"
+import {
+  canApproveExpense,
+  canManageAllApprovals,
+} from "../lib/approvalAccess"
 
 const initialFilters: ApprovalFiltersState = {
   search: "",
@@ -23,7 +27,9 @@ const initialFilters: ApprovalFiltersState = {
 
 export function ApprovalPage() {
   const { permissions, roleName, departmentName } = useAuthStore()
-  const [expenses, setExpenses] = useState<ApprovalExpense[]>(mockApprovalExpenses)
+  const expenses = useApprovalsStore((state) => state.expenses)
+  const approveExpense = useApprovalsStore((state) => state.approveExpense)
+  const rejectExpense = useApprovalsStore((state) => state.rejectExpense)
   const [filters, setFilters] = useState<ApprovalFiltersState>(initialFilters)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
@@ -35,17 +41,10 @@ export function ApprovalPage() {
   const detailExpense =
     expenses.find((expense) => expense.id === detailsExpenseId) ?? null
 
-  const canManageAll = useMemo(() => {
-    if (!roleName && permissions.length === 0) {
-      return true
-    }
-
-    return (
-      roleName === "ADMIN" ||
-      permissions.includes("settings:manage_roles") ||
-      permissions.includes("expenses:read_all")
-    )
-  }, [permissions, roleName])
+  const canManageAll = useMemo(
+    () => canManageAllApprovals(roleName, permissions),
+    [permissions, roleName]
+  )
 
   const approverDepartment = departmentName ?? "Engineering"
 
@@ -115,18 +114,7 @@ export function ApprovalPage() {
       return
     }
 
-    setExpenses((current) =>
-      current.map((item) =>
-        item.id === expense.id
-          ? {
-              ...item,
-              status: "APPROVED",
-              approvedBy: "Current Approver",
-              approvedAt: new Date().toISOString(),
-            }
-          : item
-      )
-    )
+    approveExpense(expense.id)
   }
 
   const handleReject = (data: RejectApprovalRequest) => {
@@ -142,19 +130,7 @@ export function ApprovalPage() {
       return
     }
 
-    setExpenses((current) =>
-      current.map((item) =>
-        item.id === selectedExpenseId
-          ? {
-              ...item,
-              status: "REJECTED",
-              approvedBy: "Current Approver",
-              approvedAt: new Date().toISOString(),
-              notes: data.comment,
-            }
-          : item
-      )
-    )
+    rejectExpense(selectedExpenseId, data.comment)
 
     setRejectOpen(false)
     setSelectedExpenseId(null)
@@ -260,16 +236,4 @@ export function ApprovalPage() {
       )}
     </DashboardLayout>
   )
-}
-
-function canApproveExpense(
-  expense: ApprovalExpense,
-  canManageAll: boolean,
-  approverDepartment: string
-) {
-  if (canManageAll) {
-    return true
-  }
-
-  return expense.departmentName === approverDepartment
 }

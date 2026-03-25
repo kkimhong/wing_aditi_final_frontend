@@ -21,11 +21,11 @@ import {
   BarChart3,
   Users,
   Tag,
-  Building2,
-  ShieldCheck,
   WalletCards,
 } from "lucide-react"
 import { useAuthStore } from "@/store/authStore"
+import { useApprovalsStore } from "@/store/approvalsStore"
+import { canManageAllApprovals } from "@/features/approvals/lib/approvalAccess"
 
 // ── Types ──────────────────────────────────────────────────
 interface ProjectItem {
@@ -33,6 +33,8 @@ interface ProjectItem {
   url: string
   icon: React.ReactNode
   permission: string | null
+  badge?: number
+  badgeVariant?: "default" | "destructive"
 }
 
 interface NavItem {
@@ -115,7 +117,8 @@ const allNavMain: NavItem[] = [
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { email, permissions } = useAuthStore()
+  const { email, permissions, roleName, departmentName } = useAuthStore()
+  const approvalExpenses = useApprovalsStore((state) => state.expenses)
 
   // ── Permission filter helper ───────────────────────────
   const can = (permission: string | null) => {
@@ -124,7 +127,39 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   // ── Filter items based on permissions ─────────────────
-  const visibleProjects = allProjects.filter((p) => can(p.permission))
+  const canManageAll = React.useMemo(
+    () => canManageAllApprovals(roleName, permissions),
+    [permissions, roleName]
+  )
+
+  const approverDepartment = departmentName ?? "Engineering"
+
+  const pendingApprovalsCount = React.useMemo(() => {
+    const scopedExpenses = canManageAll
+      ? approvalExpenses
+      : approvalExpenses.filter(
+          (expense) => expense.departmentName === approverDepartment
+        )
+
+    return scopedExpenses.filter((expense) => expense.status === "SUBMITTED")
+      .length
+  }, [approvalExpenses, approverDepartment, canManageAll])
+
+  const projectsWithBadge = React.useMemo<ProjectItem[]>(
+    () =>
+      allProjects.map((project) =>
+        project.url === "/approval"
+          ? {
+              ...project,
+              badge: pendingApprovalsCount,
+              badgeVariant: "destructive" as const,
+            }
+          : project
+      ),
+    [pendingApprovalsCount]
+  )
+
+  const visibleProjects = projectsWithBadge.filter((p) => can(p.permission))
 
   const visibleNavMain = allNavMain
     .filter((item) => can(item.permission))
