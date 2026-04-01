@@ -24,15 +24,15 @@ import {
   WalletCards,
 } from "lucide-react"
 import { useAuthStore } from "@/store/authStore"
-import { useApprovalsStore } from "@/store/approvalsStore"
 import { canManageAllApprovals } from "@/features/approvals/lib/approvalAccess"
+import { useApprovalExpenses } from "@/features/approvals/hook/useApproval"
+import { ACCESS_RULES, canAccessSettings, hasAnyPermission } from "@/lib/rbac"
 
-// ── Types ──────────────────────────────────────────────────
 interface ProjectItem {
   name: string
   url: string
   icon: React.ReactNode
-  permission: string | null
+  permissions: readonly string[]
   badge?: number
   badgeVariant?: "default" | "destructive"
 }
@@ -41,57 +41,56 @@ interface NavItem {
   title: string
   url: string
   icon: React.ReactNode
-  permission: string | null
+  permissions: readonly string[]
   items?: {
     title: string
     url: string
-    permission: string | null
+    permissions: readonly string[]
   }[]
 }
 
-// ── All items with permissions ─────────────────────────────
 const allProjects: ProjectItem[] = [
   {
     name: "Dashboard",
     url: "/dashboard",
     icon: <LayoutDashboard />,
-    permission: null,
+    permissions: [],
   },
   {
     name: "My Expenses",
     url: "/expenses",
     icon: <CreditCard />,
-    permission: null,
+    permissions: ACCESS_RULES.viewMyExpenses,
   },
   {
     name: "Approval",
     url: "/approval",
     icon: <CheckCircle />,
-    permission: null,
+    permissions: ACCESS_RULES.viewApprovals,
   },
   {
     name: "All Expenses",
     url: "/all-expenses",
     icon: <ReceiptText />,
-    permission: null,
+    permissions: ACCESS_RULES.viewAllExpenses,
   },
   {
     name: "Reports",
     url: "/reports",
     icon: <BarChart3 />,
-    permission: null,
+    permissions: ACCESS_RULES.viewReports,
   },
   {
     name: "Users",
     url: "/users",
     icon: <Users />,
-    permission: null,
+    permissions: ACCESS_RULES.viewUsers,
   },
   {
     name: "Categories",
     url: "/categories",
     icon: <Tag />,
-    permission: null,
+    permissions: ACCESS_RULES.viewCategories,
   },
 ]
 
@@ -100,50 +99,47 @@ const allNavMain: NavItem[] = [
     title: "Settings",
     url: "/settings",
     icon: <Settings2Icon />,
-    permission: null,
+    permissions: [...ACCESS_RULES.manageRoles, ...ACCESS_RULES.viewDepartments],
     items: [
       {
         title: "Roles & Permissions",
         url: "/settings/roles",
-        permission: null,
+        permissions: ACCESS_RULES.manageRoles,
       },
       {
         title: "Departments",
         url: "/settings/departments",
-        permission: null,
+        permissions: ACCESS_RULES.viewDepartments,
       },
     ],
   },
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { email, permissions, roleName, departmentName } = useAuthStore()
-  const approvalExpenses = useApprovalsStore((state) => state.expenses)
+  const { email, permissions, roleName } = useAuthStore()
 
-  // ── Permission filter helper ───────────────────────────
-  const can = (permission: string | null) => {
-    if (permission === null) return true
-    return permissions.includes(permission)
-  }
+  const can = React.useCallback(
+    (requiredPermissions: readonly string[]) =>
+      hasAnyPermission(roleName, permissions, requiredPermissions),
+    [permissions, roleName]
+  )
 
-  // ── Filter items based on permissions ─────────────────
   const canManageAll = React.useMemo(
     () => canManageAllApprovals(roleName, permissions),
     [permissions, roleName]
   )
 
-  const approverDepartment = departmentName ?? "Engineering"
+  const canViewApprovals = can(ACCESS_RULES.viewApprovals)
+
+  const { data: approvalExpenses } = useApprovalExpenses(
+    canViewApprovals,
+    canManageAll
+  )
 
   const pendingApprovalsCount = React.useMemo(() => {
-    const scopedExpenses = canManageAll
-      ? approvalExpenses
-      : approvalExpenses.filter(
-          (expense) => expense.departmentName === approverDepartment
-        )
-
-    return scopedExpenses.filter((expense) => expense.status === "SUBMITTED")
-      .length
-  }, [approvalExpenses, approverDepartment, canManageAll])
+    const rows = approvalExpenses ?? []
+    return rows.filter((expense) => expense.status === "SUBMITTED").length
+  }, [approvalExpenses])
 
   const projectsWithBadge = React.useMemo<ProjectItem[]>(
     () =>
@@ -151,7 +147,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         project.url === "/approval"
           ? {
               ...project,
-              badge: pendingApprovalsCount,
+              badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
               badgeVariant: "destructive" as const,
             }
           : project
@@ -159,19 +155,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     [pendingApprovalsCount]
   )
 
-  const visibleProjects = projectsWithBadge.filter((p) => can(p.permission))
+  const visibleProjects = React.useMemo(
+    () => projectsWithBadge.filter((project) => can(project.permissions)),
+    [can, projectsWithBadge]
+  )
 
-  const visibleNavMain = allNavMain
-    .filter((item) => can(item.permission))
-    .map((item) => ({
-      ...item,
-      items: item.items?.filter((sub) => can(sub.permission)),
-    }))
+  const visibleNavMain = React.useMemo(
+    () =>
+      allNavMain
+        .filter((item) => {
+          if (item.url === "/settings") {
+            return canAccessSettings(roleName, permissions)
+          }
+
+          return can(item.permissions)
+        })
+        .map((item) => ({
+          ...item,
+          items: item.items?.filter((subItem) => can(subItem.permissions)),
+        }))
+        .filter((item) => !item.items || item.items.length > 0),
+    [can, permissions, roleName]
+  )
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        {/* Company branding */}
         <div className="flex items-center gap-2 px-2 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <WalletCards className="h-4 w-4" />

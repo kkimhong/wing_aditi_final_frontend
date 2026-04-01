@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useMemo, useState } from "react"
 import {
@@ -41,6 +41,8 @@ interface CategoryTableProps {
   categories: CategoryResponse[]
   onEdit?: (category: CategoryResponse) => void
   onToggleStatus?: (category: CategoryResponse) => void
+  onDelete?: (category: CategoryResponse) => void
+  deletingCategoryId?: string | null
   emptyMessage?: string
 }
 
@@ -48,6 +50,8 @@ export function CategoryTable({
   categories,
   onEdit,
   onToggleStatus,
+  onDelete,
+  deletingCategoryId = null,
   emptyMessage = "No categories found.",
 }: CategoryTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
@@ -57,7 +61,7 @@ export function CategoryTable({
   })
 
   const columns = useMemo<ColumnDef<CategoryResponse>[]>(() => {
-    return [
+    const baseColumns: ColumnDef<CategoryResponse>[] = [
       {
         accessorKey: "name",
         header: ({ column }) => (
@@ -117,34 +121,56 @@ export function CategoryTable({
           </span>
         ),
       },
+    ]
+
+    if (!onEdit && !onToggleStatus && !onDelete) {
+      return baseColumns
+    }
+
+    return [
+      ...baseColumns,
       {
         id: "actions",
         header: () => <div className="w-12" />,
         cell: ({ row }) => {
           const category = row.original
+          const isDeleting = deletingCategoryId === category.id
 
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm">
+                <Button variant="ghost" size="icon-sm" disabled={isDeleting}>
                   <MoreHorizontal className="h-4 w-4" />
                   <span className="sr-only">Open actions</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit?.(category)}>
-                  Edit category
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onToggleStatus?.(category)}>
-                  {category.active ? "Deactivate" : "Activate"}
-                </DropdownMenuItem>
+                {onEdit ? (
+                  <DropdownMenuItem onClick={() => onEdit(category)}>
+                    Edit category
+                  </DropdownMenuItem>
+                ) : null}
+                {onToggleStatus ? (
+                  <DropdownMenuItem onClick={() => onToggleStatus(category)}>
+                    {category.active ? "Deactivate" : "Activate"}
+                  </DropdownMenuItem>
+                ) : null}
+                {onDelete ? (
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => onDelete(category)}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete category"}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           )
         },
       },
     ]
-  }, [onEdit, onToggleStatus])
+  }, [deletingCategoryId, onDelete, onEdit, onToggleStatus])
 
   const table = useReactTable({
     data: categories,

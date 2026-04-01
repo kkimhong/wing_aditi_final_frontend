@@ -23,6 +23,7 @@ interface ReportsFiltersProps {
   departments: string[]
   resultCount: number
   activeFilterCount: number
+  canExport?: boolean
   onChange: (next: Partial<ReportFilters>) => void
   onClear: () => void
   onExport: () => void
@@ -33,6 +34,7 @@ export function ReportsFilters({
   departments,
   resultCount,
   activeFilterCount,
+  canExport = true,
   onChange,
   onClear,
   onExport,
@@ -136,10 +138,12 @@ export function ReportsFilters({
               Clear
             </Button>
           )}
-          <Button size="sm" className="gap-1.5" onClick={onExport}>
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </Button>
+          {canExport ? (
+            <Button size="sm" className="gap-1.5" onClick={onExport}>
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+          ) : null}
         </div>
       </div>
     </section>

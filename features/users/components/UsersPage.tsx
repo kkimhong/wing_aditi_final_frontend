@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { UserTable } from "./UserTable"
 import { RegisterUserForm } from "./RegisterUserForm"
-import { mockUsers, departmentOptions, roleOptions } from "./userMockData"
 import type { RegisterRequest, UserResponse } from "../schema/userSchema"
+import { useUsers, useRegisterUser, useToggleUserStatus } from "../hook/useUser"
+import { useDepartment } from "@/features/departments/hook/useDepartment"
+import { useRoles } from "@/features/roles/hook/useRole"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -25,15 +28,61 @@ import {
 } from "@/components/ui/sheet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Search } from "lucide-react"
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 
 type UserStatusFilter = "ALL" | "ACTIVE" | "INACTIVE"
 
 export function UsersPage() {
-  const [users, setUsers] = useState<UserResponse[]>(mockUsers)
+  const { permissions, roleName } = useAuthStore()
+  const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewUsers)
+  const canCreateUser = hasAnyPermission(roleName, permissions, ACCESS_RULES.createUsers)
+  const canUpdateUsers = hasAnyPermission(roleName, permissions, ACCESS_RULES.updateUsers)
+
+  const { data: fetchedUsers, isLoading, error } = useUsers(canViewPage)
+  const { data: fetchedDepartments, error: departmentsError } = useDepartment(canViewPage)
+  const { data: fetchedRoles, error: rolesError } = useRoles(canViewPage)
+  const registerUserMutation = useRegisterUser()
+  const toggleUserStatusMutation = useToggleUserStatus()
+
   const [sheetOpen, setSheetOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("ALL")
   const [departmentFilter, setDepartmentFilter] = useState("ALL")
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+
+  const roleOptions = useMemo(() => {
+    return (fetchedRoles ?? []).map((role) => ({ id: role.id, name: role.name }))
+  }, [fetchedRoles])
+
+  const departmentOptions = useMemo(() => {
+    return (fetchedDepartments ?? []).map((department) => ({
+      id: department.id,
+      name: department.name,
+    }))
+  }, [fetchedDepartments])
+
+  const roleNameById = useMemo(() => {
+    return new Map(roleOptions.map((role) => [role.id, role.name]))
+  }, [roleOptions])
+
+  const departmentNameById = useMemo(() => {
+    return new Map(departmentOptions.map((department) => [department.id, department.name]))
+  }, [departmentOptions])
+
+  const users = useMemo(() => {
+    return (fetchedUsers ?? []).map((user) => ({
+      ...user,
+      roleName:
+        user.roleName ??
+        (user.roleId ? roleNameById.get(user.roleId) ?? null : null),
+      departmentName:
+        user.departmentName ??
+        (user.departmentId
+          ? departmentNameById.get(user.departmentId) ?? null
+          : null),
+    }))
+  }, [departmentNameById, fetchedUsers, roleNameById])
 
   const departmentFilters = useMemo(() => {
     const values = new Set(
@@ -67,35 +116,56 @@ export function UsersPage() {
 
   const totalActive = users.filter((user) => user.isActive).length
   const totalInactive = users.length - totalActive
-  const totalManagers = users.filter((user) => user.roleName === "Manager").length
+  const totalManagers = users.filter((user) => {
+    const role = user.roleName?.trim().toLowerCase() ?? ""
+    return role === "manager"
+  }).length
 
-  const handleRegister = (data: RegisterRequest) => {
-    const roleName = roleOptions.find((role) => role.id === data.roleId)?.name ?? null
-    const departmentName =
-      departmentOptions.find((department) => department.id === data.departmentId)
-        ?.name ?? null
+  const mutationErrorMessage =
+    (registerUserMutation.error as Error | null)?.message ??
+    (toggleUserStatusMutation.error as Error | null)?.message ??
+    null
 
-    const nextUser: UserResponse = {
-      id: createId(),
-      firstname: data.firstname,
-      lastname: data.lastname,
-      email: data.email,
-      roleName,
-      departmentName,
-      isActive: true,
-      permissions: [],
-      createdAt: new Date().toISOString(),
+  const handleRegister = async (data: RegisterRequest) => {
+    if (!canCreateUser) {
+      return
     }
 
-    setUsers((current) => [nextUser, ...current])
-    setSheetOpen(false)
+    registerUserMutation.reset()
+
+    try {
+      await registerUserMutation.mutateAsync(data)
+      setSheetOpen(false)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
   }
 
-  const handleToggleStatus = (target: UserResponse) => {
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === target.id ? { ...user, isActive: !user.isActive } : user
-      )
+  const handleToggleStatus = async (target: UserResponse) => {
+    if (!canUpdateUsers) {
+      return
+    }
+
+    toggleUserStatusMutation.reset()
+    setUpdatingUserId(target.id)
+
+    try {
+      await toggleUserStatusMutation.mutateAsync({
+        user: target,
+        isActive: !target.isActive,
+      })
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="Users">
+        <AccessDenied description="You are not allowed to view user management." />
+      </DashboardLayout>
     )
   }
 
@@ -103,29 +173,42 @@ export function UsersPage() {
     <DashboardLayout
       title="Users"
       actions={
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button size="sm" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              Register User
-            </Button>
-          </SheetTrigger>
-          <SheetContent className="w-full sm:max-w-2xl lg:max-w-3xl">
-            <SheetHeader>
-              <SheetTitle>Register user</SheetTitle>
-              <SheetDescription>
-                Create a user and assign a role and department.
-              </SheetDescription>
-            </SheetHeader>
-            <div className="overflow-y-auto px-4 pb-4">
-              <RegisterUserForm
-                onSubmit={handleRegister}
-                departments={departmentOptions}
-                roles={roleOptions}
-              />
-            </div>
-          </SheetContent>
-        </Sheet>
+        canCreateUser ? (
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetTrigger asChild>
+              <Button size="sm" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Register User
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-full sm:max-w-2xl lg:max-w-3xl">
+              <SheetHeader>
+                <SheetTitle>Register user</SheetTitle>
+                <SheetDescription>
+                  Create a user and assign a role and department.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="overflow-y-auto px-4 pb-4">
+                <RegisterUserForm
+                  onSubmit={handleRegister}
+                  isLoading={registerUserMutation.isPending}
+                  departments={departmentOptions}
+                  roles={roleOptions}
+                />
+                {departmentsError ? (
+                  <p className="mt-3 text-xs text-destructive">
+                    Failed to load departments: {departmentsError.message}
+                  </p>
+                ) : null}
+                {rolesError ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    Failed to load roles: {rolesError.message}
+                  </p>
+                ) : null}
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : null
       }
     >
       <section className="rounded-none border bg-gradient-to-r from-indigo-50 via-white to-cyan-50 p-5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -136,6 +219,24 @@ export function UsersPage() {
           Manage employees, roles, and account statuses
         </h2>
       </section>
+
+      {isLoading && users.length === 0 ? (
+        <div className="rounded-none border bg-card p-4 text-sm text-muted-foreground">
+          Loading users...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load users: {error.message}
+        </div>
+      ) : null}
+
+      {mutationErrorMessage ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {mutationErrorMessage}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="rounded-none stats-card">
@@ -217,19 +318,11 @@ export function UsersPage() {
 
       <UserTable
         users={filteredUsers}
-        onToggleStatus={handleToggleStatus}
-        emptyMessage="No users match your filters."
+        onToggleStatus={canUpdateUsers ? handleToggleStatus : undefined}
+        emptyMessage={
+          updatingUserId ? "Updating user status..." : "No users match your filters."
+        }
       />
     </DashboardLayout>
   )
 }
-
-function createId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID()
-  }
-
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-

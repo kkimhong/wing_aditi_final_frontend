@@ -2,10 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { CategoryForm } from "./CategoryForm"
 import { CategoryTable } from "./CategoryTable"
-import { mockCategories } from "./categoryMockData"
+import { DeleteCategoryDialog } from "./DeleteCategoryDialog"
 import type { CategoryRequest, CategoryResponse } from "../schema/categorySchema"
+import {
+  useCategory,
+  useCreateCategory,
+  useDeleteCategory,
+  useToggleCategoryStatus,
+  useUpdateCategory,
+} from "../hook/useCategory"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,15 +32,50 @@ import {
 } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Search } from "lucide-react"
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 
 type CategoryStatusFilter = "ALL" | "ACTIVE" | "INACTIVE"
 
 export function CategoriesPage() {
-  const [categories, setCategories] = useState<CategoryResponse[]>(mockCategories)
+  const { permissions, roleName } = useAuthStore()
+  const canViewPage = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.viewCategories
+  )
+  const canCreateCategory = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.createCategories
+  )
+  const canUpdateCategory = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.updateCategories
+  )
+  const canDeleteCategory = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.deleteCategories
+  )
+
+  const { data: fetchedCategories, isLoading, error } = useCategory(canViewPage)
+  const createCategoryMutation = useCreateCategory()
+  const updateCategoryMutation = useUpdateCategory()
+  const toggleCategoryStatusMutation = useToggleCategoryStatus()
+  const deleteCategoryMutation = useDeleteCategory()
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<CategoryStatusFilter>("ALL")
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [pendingDeleteCategory, setPendingDeleteCategory] =
+    useState<CategoryResponse | null>(null)
+
+  const categories = fetchedCategories ?? []
 
   const editingCategory =
     categories.find((category) => category.id === editingCategoryId) ?? null
@@ -65,7 +108,21 @@ export function CategoriesPage() {
         ) / categoriesWithLimit.length
       : 0
 
-  const handleSaveCategory = (data: CategoryRequest) => {
+  const resetMutations = () => {
+    createCategoryMutation.reset()
+    updateCategoryMutation.reset()
+    toggleCategoryStatusMutation.reset()
+    deleteCategoryMutation.reset()
+  }
+
+  const mutationErrorMessage =
+    (createCategoryMutation.error as Error | null)?.message ??
+    (updateCategoryMutation.error as Error | null)?.message ??
+    (toggleCategoryStatusMutation.error as Error | null)?.message ??
+    (deleteCategoryMutation.error as Error | null)?.message ??
+    null
+
+  const handleSaveCategory = async (data: CategoryRequest) => {
     const normalizedDescription = data.description?.trim() || null
     const normalizedLimit =
       typeof data.limitPerSubmission === "number" &&
@@ -73,43 +130,96 @@ export function CategoriesPage() {
         ? data.limitPerSubmission
         : null
 
-    if (editingCategoryId) {
-      setCategories((current) =>
-        current.map((category) =>
-          category.id === editingCategoryId
-            ? {
-                ...category,
-                name: data.name,
-                description: normalizedDescription,
-                limitPerSubmission: normalizedLimit,
-              }
-            : category
-        )
-      )
-    } else {
-      const nextCategory: CategoryResponse = {
-        id: createId(),
-        name: data.name,
-        description: normalizedDescription,
-        limitPerSubmission: normalizedLimit,
-        active: true,
-        createdAt: new Date().toISOString(),
-      }
-
-      setCategories((current) => [nextCategory, ...current])
+    const payload: CategoryRequest = {
+      name: data.name,
+      description: normalizedDescription,
+      limitPerSubmission: normalizedLimit,
     }
 
-    setDialogOpen(false)
-    setEditingCategoryId(null)
+    resetMutations()
+
+    try {
+      if (editingCategoryId) {
+        if (!canUpdateCategory) {
+          return
+        }
+
+        await updateCategoryMutation.mutateAsync({
+          id: editingCategoryId,
+          payload,
+        })
+      } else {
+        if (!canCreateCategory) {
+          return
+        }
+
+        await createCategoryMutation.mutateAsync(payload)
+      }
+
+      setDialogOpen(false)
+      setEditingCategoryId(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
   }
 
-  const handleToggleStatus = (target: CategoryResponse) => {
-    setCategories((current) =>
-      current.map((category) =>
-        category.id === target.id
-          ? { ...category, active: !category.active }
-          : category
-      )
+  const handleToggleStatus = async (target: CategoryResponse) => {
+    if (!canUpdateCategory) {
+      return
+    }
+
+    resetMutations()
+
+    try {
+      await toggleCategoryStatusMutation.mutateAsync({
+        category: target,
+        active: !target.active,
+      })
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
+  }
+
+  const requestDeleteCategory = (category: CategoryResponse) => {
+    if (!canDeleteCategory) {
+      return
+    }
+
+    resetMutations()
+    setPendingDeleteCategory(category)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!pendingDeleteCategory) {
+      return
+    }
+
+    const categoryId = pendingDeleteCategory.id
+    setDeletingCategoryId(categoryId)
+
+    try {
+      await deleteCategoryMutation.mutateAsync(categoryId)
+
+      if (editingCategoryId === categoryId) {
+        setDialogOpen(false)
+        setEditingCategoryId(null)
+      }
+
+      setDeleteDialogOpen(false)
+      setPendingDeleteCategory(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    } finally {
+      setDeletingCategoryId(null)
+    }
+  }
+
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="Categories">
+        <AccessDenied description="You are not allowed to view categories." />
+      </DashboardLayout>
     )
   }
 
@@ -117,17 +227,20 @@ export function CategoriesPage() {
     <DashboardLayout
       title="Categories"
       actions={
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setEditingCategoryId(null)
-            setDialogOpen(true)
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Category
-        </Button>
+        canCreateCategory ? (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              setEditingCategoryId(null)
+              resetMutations()
+              setDialogOpen(true)
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Category
+          </Button>
+        ) : null
       }
     >
       <section className="rounded-none border bg-gradient-to-r from-violet-50 via-white to-indigo-50 p-5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -138,6 +251,24 @@ export function CategoriesPage() {
           Define spend categories and control submission limits
         </h2>
       </section>
+
+      {isLoading && categories.length === 0 ? (
+        <div className="rounded-none border bg-card p-4 text-sm text-muted-foreground">
+          Loading categories...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load categories: {error.message}
+        </div>
+      ) : null}
+
+      {mutationErrorMessage ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {mutationErrorMessage}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="rounded-none stats-card">
@@ -202,11 +333,18 @@ export function CategoriesPage() {
 
       <CategoryTable
         categories={filteredCategories}
-        onEdit={(category) => {
-          setEditingCategoryId(category.id)
-          setDialogOpen(true)
-        }}
-        onToggleStatus={handleToggleStatus}
+        deletingCategoryId={deletingCategoryId}
+        onEdit={
+          canUpdateCategory
+            ? (category) => {
+                setEditingCategoryId(category.id)
+                resetMutations()
+                setDialogOpen(true)
+              }
+            : undefined
+        }
+        onToggleStatus={canUpdateCategory ? handleToggleStatus : undefined}
+        onDelete={canDeleteCategory ? requestDeleteCategory : undefined}
         emptyMessage="No categories match your filters."
       />
 
@@ -216,6 +354,7 @@ export function CategoriesPage() {
           setDialogOpen(open)
           if (!open) {
             setEditingCategoryId(null)
+            resetMutations()
           }
         }}
       >
@@ -233,6 +372,7 @@ export function CategoriesPage() {
 
           <CategoryForm
             onSubmit={handleSaveCategory}
+            isLoading={createCategoryMutation.isPending || updateCategoryMutation.isPending}
             defaultValues={
               editingCategory
                 ? {
@@ -245,6 +385,20 @@ export function CategoriesPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <DeleteCategoryDialog
+        open={deleteDialogOpen}
+        category={pendingDeleteCategory}
+        isDeleting={deleteCategoryMutation.isPending}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+
+          if (!open && !deleteCategoryMutation.isPending) {
+            setPendingDeleteCategory(null)
+          }
+        }}
+        onConfirm={handleConfirmDeleteCategory}
+      />
     </DashboardLayout>
   )
 }
@@ -256,13 +410,3 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 2,
   }).format(value)
 }
-
-function createId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID()
-  }
-
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-

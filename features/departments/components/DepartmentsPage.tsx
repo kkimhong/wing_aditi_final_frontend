@@ -1,12 +1,15 @@
-﻿"use client"
+"use client"
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { DepartmentForm } from "./DepartmentForm"
 import { DepartmentTable } from "./DepartmentTable"
-import type { DepartmentRequest } from "../schema/departmentSchema"
+import { DeleteDepartmentDialog } from "./DeleteDepartmentDialog"
+import type { DepartmentRequest, DepartmentResponse } from "../schema/departmentSchema"
 import {
   useCreateDepartment,
+  useDeleteDepartment,
   useDepartment,
   useUpdateDepartment,
 } from "../hook/useDepartment"
@@ -21,17 +24,48 @@ import {
 } from "@/components/ui/dialog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Search } from "lucide-react"
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 
 export function DepartmentsPage() {
-  const { data: fetchedDepartments, isLoading, error } = useDepartment()
+  const { permissions, roleName } = useAuthStore()
+  const canViewPage = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.viewDepartments
+  )
+  const canCreateDepartment = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.createDepartments
+  )
+  const canUpdateDepartment = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.updateDepartments
+  )
+  const canDeleteDepartment = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.deleteDepartments
+  )
+
+  const { data: fetchedDepartments, isLoading, error } = useDepartment(canViewPage)
   const createDepartmentMutation = useCreateDepartment()
   const updateDepartmentMutation = useUpdateDepartment()
+  const deleteDepartmentMutation = useDeleteDepartment()
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(
     null
   )
   const [searchQuery, setSearchQuery] = useState("")
+  const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(
+    null
+  )
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [pendingDeleteDepartment, setPendingDeleteDepartment] =
+    useState<DepartmentResponse | null>(null)
 
   const departments = fetchedDepartments ?? []
 
@@ -39,8 +73,14 @@ export function DepartmentsPage() {
     departments.find((department) => department.id === editingDepartmentId) ?? null
 
   const filteredDepartments = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase()
+
+    if (!term) {
+      return departments
+    }
+
     return departments.filter((department) =>
-      department.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      department.name.toLowerCase().includes(term)
     )
   }, [departments, searchQuery])
 
@@ -56,10 +96,17 @@ export function DepartmentsPage() {
   const isSaving =
     createDepartmentMutation.isPending || updateDepartmentMutation.isPending
 
-  const saveErrorMessage =
+  const mutationErrorMessage =
     (createDepartmentMutation.error as Error | null)?.message ??
     (updateDepartmentMutation.error as Error | null)?.message ??
+    (deleteDepartmentMutation.error as Error | null)?.message ??
     null
+
+  const resetMutations = () => {
+    createDepartmentMutation.reset()
+    updateDepartmentMutation.reset()
+    deleteDepartmentMutation.reset()
+  }
 
   const handleSaveDepartment = async (data: DepartmentRequest) => {
     const normalizedBudget =
@@ -72,16 +119,23 @@ export function DepartmentsPage() {
       budgetLimit: normalizedBudget,
     }
 
-    createDepartmentMutation.reset()
-    updateDepartmentMutation.reset()
+    resetMutations()
 
     try {
       if (editingDepartmentId) {
+        if (!canUpdateDepartment) {
+          return
+        }
+
         await updateDepartmentMutation.mutateAsync({
           id: editingDepartmentId,
           payload,
         })
       } else {
+        if (!canCreateDepartment) {
+          return
+        }
+
         await createDepartmentMutation.mutateAsync(payload)
       }
 
@@ -92,23 +146,68 @@ export function DepartmentsPage() {
     }
   }
 
+  const requestDeleteDepartment = (department: DepartmentResponse) => {
+    if (!canDeleteDepartment) {
+      return
+    }
+
+    resetMutations()
+    setPendingDeleteDepartment(department)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDeleteDepartment = async () => {
+    if (!pendingDeleteDepartment) {
+      return
+    }
+
+    const departmentId = pendingDeleteDepartment.id
+
+    setDeletingDepartmentId(departmentId)
+
+    try {
+      await deleteDepartmentMutation.mutateAsync(departmentId)
+
+      if (editingDepartmentId === departmentId) {
+        setDialogOpen(false)
+        setEditingDepartmentId(null)
+      }
+
+      setDeleteDialogOpen(false)
+      setPendingDeleteDepartment(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    } finally {
+      setDeletingDepartmentId(null)
+    }
+  }
+
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="Departments">
+        <AccessDenied description="You are not allowed to view departments." />
+      </DashboardLayout>
+    )
+  }
+
   return (
     <DashboardLayout
       title="Departments"
       actions={
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setEditingDepartmentId(null)
-            createDepartmentMutation.reset()
-            updateDepartmentMutation.reset()
-            setDialogOpen(true)
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Department
-        </Button>
+        canCreateDepartment ? (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              setEditingDepartmentId(null)
+              resetMutations()
+              setDialogOpen(true)
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Department
+          </Button>
+        ) : null
       }
     >
       <section className="rounded-none border bg-gradient-to-r from-emerald-50 via-white to-lime-50 p-5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -132,9 +231,9 @@ export function DepartmentsPage() {
         </div>
       ) : null}
 
-      {saveErrorMessage ? (
+      {mutationErrorMessage ? (
         <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {saveErrorMessage}
+          {mutationErrorMessage}
         </div>
       ) : null}
 
@@ -186,12 +285,17 @@ export function DepartmentsPage() {
 
       <DepartmentTable
         departments={filteredDepartments}
-        onEdit={(department) => {
-          setEditingDepartmentId(department.id)
-          createDepartmentMutation.reset()
-          updateDepartmentMutation.reset()
-          setDialogOpen(true)
-        }}
+        deletingDepartmentId={deletingDepartmentId}
+        onEdit={
+          canUpdateDepartment
+            ? (department) => {
+                setEditingDepartmentId(department.id)
+                resetMutations()
+                setDialogOpen(true)
+              }
+            : undefined
+        }
+        onDelete={canDeleteDepartment ? requestDeleteDepartment : undefined}
         emptyMessage="No departments match your search."
       />
 
@@ -201,8 +305,7 @@ export function DepartmentsPage() {
           setDialogOpen(open)
           if (!open) {
             setEditingDepartmentId(null)
-            createDepartmentMutation.reset()
-            updateDepartmentMutation.reset()
+            resetMutations()
           }
         }}
       >
@@ -233,6 +336,20 @@ export function DepartmentsPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <DeleteDepartmentDialog
+        open={deleteDialogOpen}
+        department={pendingDeleteDepartment}
+        isDeleting={deleteDepartmentMutation.isPending}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+
+          if (!open && !deleteDepartmentMutation.isPending) {
+            setPendingDeleteDepartment(null)
+          }
+        }}
+        onConfirm={handleConfirmDeleteDepartment}
+      />
     </DashboardLayout>
   )
 }

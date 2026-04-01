@@ -1,5 +1,6 @@
-﻿"use client"
+"use client"
 
+import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
@@ -25,11 +26,30 @@ export function CategoryForm({
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<CategoryRequest>({
     resolver: zodResolver(CategoryRequestSchema),
-    defaultValues,
+    defaultValues: {
+      name: defaultValues?.name ?? "",
+      description: defaultValues?.description ?? "",
+      limitPerSubmission:
+        typeof defaultValues?.limitPerSubmission === "number"
+          ? defaultValues.limitPerSubmission
+          : undefined,
+    },
   })
+
+  useEffect(() => {
+    reset({
+      name: defaultValues?.name ?? "",
+      description: defaultValues?.description ?? "",
+      limitPerSubmission:
+        typeof defaultValues?.limitPerSubmission === "number"
+          ? defaultValues.limitPerSubmission
+          : undefined,
+    })
+  }, [defaultValues, reset])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

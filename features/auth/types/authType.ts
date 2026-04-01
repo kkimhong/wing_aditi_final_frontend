@@ -7,8 +7,11 @@ export const LoginRequestSchema = z.object({
 
 export const AuthResponseSchema = z.object({
   token: z.string(),
-  email: z.string().email(),
-  permissions: z.array(z.string()),
+  email: z.string().email().optional(),
+  roleName: z.string().optional(),
+  role: z.string().optional(),
+  permissions: z.array(z.string()).optional(),
+  authorities: z.array(z.string()).optional(),
 })
 
 export type LoginRequest = z.infer<typeof LoginRequestSchema>

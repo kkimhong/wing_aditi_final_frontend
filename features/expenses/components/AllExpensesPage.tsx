@@ -2,83 +2,13 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { ExpenseTable } from "./ExpenseTable"
 import { AllExpensesFilters, type AllExpensesFiltersState } from "./AllExpensesFilters"
 import { AllExpensesSummaryCards } from "./AllExpensesSummaryCards"
-import { mockMyExpenses } from "./expenseMockData"
-import type { ExpenseResponse } from "../types/expenseTypes"
-
-const mockAllExpenses: ExpenseResponse[] = [
-  ...mockMyExpenses,
-  {
-    id: "9f7915d0-3062-47eb-b5fc-c8f4ef83e14b",
-    title: "Client Dinner",
-    amount: 480,
-    currency: "USD",
-    category: "Meals",
-    categoryId: "22222222-2222-4222-8222-222222222222",
-    expenseDate: "2026-03-16",
-    status: "APPROVED",
-    submittedBy: "Lina Park",
-    departmentName: "Sales",
-    notes: "Q1 client meeting",
-    receiptUrl: null,
-    approvedBy: "Marcus Chen",
-    approvedAt: "2026-03-17T03:30:00.000Z",
-    createdAt: "2026-03-16T12:15:00.000Z",
-  },
-  {
-    id: "be8122ff-b6f5-4abd-83ba-7bf7d03f3df1",
-    title: "AWS Credits Top-up",
-    amount: 1500,
-    currency: "USD",
-    category: "Software",
-    categoryId: "33333333-3333-4333-8333-333333333333",
-    expenseDate: "2026-03-14",
-    status: "SUBMITTED",
-    submittedBy: "Diego Romero",
-    departmentName: "Platform",
-    notes: null,
-    receiptUrl: null,
-    approvedBy: null,
-    approvedAt: null,
-    createdAt: "2026-03-14T09:00:00.000Z",
-  },
-  {
-    id: "30420735-3999-4e19-ad35-b63484664cf2",
-    title: "Recruitment Fair Booth",
-    amount: 920,
-    currency: "USD",
-    category: "Training",
-    categoryId: "44444444-4444-4444-8444-444444444444",
-    expenseDate: "2026-03-09",
-    status: "REJECTED",
-    submittedBy: "Ruth Lin",
-    departmentName: "People Ops",
-    notes: "Budget exceeded",
-    receiptUrl: null,
-    approvedBy: "Marcus Chen",
-    approvedAt: "2026-03-10T10:00:00.000Z",
-    createdAt: "2026-03-09T10:15:00.000Z",
-  },
-  {
-    id: "723697e0-fbe9-4277-b0ea-2882e2548772",
-    title: "Office Printer Toner",
-    amount: 210,
-    currency: "USD",
-    category: "Office Supplies",
-    categoryId: "55555555-5555-4555-8555-555555555555",
-    expenseDate: "2026-03-07",
-    status: "DRAFT",
-    submittedBy: "Nadia Sam",
-    departmentName: "Operations",
-    notes: null,
-    receiptUrl: null,
-    approvedBy: null,
-    approvedAt: null,
-    createdAt: "2026-03-07T08:10:00.000Z",
-  },
-]
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
+import { useAllExpenses } from "@/features/approvals/hook/useApproval"
 
 const initialFilters: AllExpensesFiltersState = {
   search: "",
@@ -90,30 +20,36 @@ const initialFilters: AllExpensesFiltersState = {
 }
 
 export function AllExpensesPage() {
+  const { permissions, roleName } = useAuthStore()
+  const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewAllExpenses)
+
   const [filters, setFilters] = useState<AllExpensesFiltersState>(initialFilters)
+  const { data: fetchedExpenses, isLoading, error } = useAllExpenses(canViewPage)
+
+  const allExpenses = fetchedExpenses ?? []
 
   const departments = useMemo(() => {
     const values = new Set(
-      mockAllExpenses
+      allExpenses
         .map((expense) => expense.departmentName)
         .filter((department): department is string => Boolean(department))
     )
 
     return Array.from(values).sort()
-  }, [])
+  }, [allExpenses])
 
   const categories = useMemo(() => {
     const values = new Set(
-      mockAllExpenses
+      allExpenses
         .map((expense) => expense.category)
         .filter((category): category is string => Boolean(category))
     )
 
     return Array.from(values).sort()
-  }, [])
+  }, [allExpenses])
 
   const filteredExpenses = useMemo(() => {
-    return mockAllExpenses.filter((expense) => {
+    return allExpenses.filter((expense) => {
       const searchTerm = filters.search.trim().toLowerCase()
 
       const matchesSearch =
@@ -145,7 +81,7 @@ export function AllExpensesPage() {
         matchesEndDate
       )
     })
-  }, [filters])
+  }, [allExpenses, filters])
 
   const activeFilterCount = useMemo(() => {
     let count = 0
@@ -162,18 +98,29 @@ export function AllExpensesPage() {
     setFilters((current) => ({ ...current, ...next }))
   }
 
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="All Expenses">
+        <AccessDenied description="You are not allowed to view company-wide expenses." />
+      </DashboardLayout>
+    )
+  }
+
   return (
     <DashboardLayout title="All Expenses">
-      {/* <section className="rounded-none border bg-gradient-to-r from-blue-50 via-white to-cyan-50 p-5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Organization ledger
-        </p>
-        <h2 className="mt-1 text-xl font-semibold tracking-tight">
-          Review all department expenses with unified filtering
-        </h2>
-      </section> */}
-
       <AllExpensesSummaryCards expenses={filteredExpenses} />
+
+      {isLoading && allExpenses.length === 0 ? (
+        <div className="rounded-none border bg-card p-4 text-sm text-muted-foreground">
+          Loading expenses...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load expenses: {error.message}
+        </div>
+      ) : null}
 
       <AllExpensesFilters
         filters={filters}

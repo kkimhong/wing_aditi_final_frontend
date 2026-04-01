@@ -1,4 +1,4 @@
-﻿import { api } from "@/lib/axios"
+import { api, getApiErrorMessage } from "@/lib/axios"
 import type {
   DepartmentRequest,
   DepartmentResponse,
@@ -45,6 +45,15 @@ export const updateDepartmentFn = async (
     await api.put(`/departments/${id}`, requestBody)
   } catch (error: unknown) {
     const message = getApiErrorMessage(error, "Failed to update department")
+    throw new Error(message)
+  }
+}
+
+export const deleteDepartmentFn = async (id: string) => {
+  try {
+    await api.delete(`/departments/${id}`)
+  } catch (error: unknown) {
+    const message = getApiErrorMessage(error, "Failed to delete department")
     throw new Error(message)
   }
 }
@@ -112,19 +121,4 @@ function toRequestPayload(payload: DepartmentRequest) {
     name: payload.name,
     budgetLimit: normalizedBudget,
   }
-}
-
-function getApiErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (error as { response?: { data?: { message?: string } } }).response?.data
-      ?.message === "string"
-  ) {
-    return (error as { response?: { data?: { message?: string } } }).response?.data
-      ?.message as string
-  }
-
-  return fallback
 }

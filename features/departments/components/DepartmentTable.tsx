@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useMemo, useState } from "react"
 import {
@@ -39,12 +39,16 @@ import { ArrowUpDown, MoreHorizontal } from "lucide-react"
 interface DepartmentTableProps {
   departments: DepartmentResponse[]
   onEdit?: (department: DepartmentResponse) => void
+  onDelete?: (department: DepartmentResponse) => void
+  deletingDepartmentId?: string | null
   emptyMessage?: string
 }
 
 export function DepartmentTable({
   departments,
   onEdit,
+  onDelete,
+  deletingDepartmentId = null,
   emptyMessage = "No departments found.",
 }: DepartmentTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
@@ -54,7 +58,7 @@ export function DepartmentTable({
   })
 
   const columns = useMemo<ColumnDef<DepartmentResponse>[]>(() => {
-    return [
+    const baseColumns: ColumnDef<DepartmentResponse>[] = [
       {
         accessorKey: "name",
         header: ({ column }) => (
@@ -117,31 +121,51 @@ export function DepartmentTable({
           </span>
         ),
       },
+    ]
+
+    if (!onEdit && !onDelete) {
+      return baseColumns
+    }
+
+    return [
+      ...baseColumns,
       {
         id: "actions",
         header: () => <div className="w-12" />,
         cell: ({ row }) => {
           const department = row.original
+          const isDeleting = deletingDepartmentId === department.id
 
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm">
+                <Button variant="ghost" size="icon-sm" disabled={isDeleting}>
                   <MoreHorizontal className="h-4 w-4" />
                   <span className="sr-only">Open actions</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit?.(department)}>
-                  Edit department
-                </DropdownMenuItem>
+                {onEdit ? (
+                  <DropdownMenuItem onClick={() => onEdit(department)}>
+                    Edit department
+                  </DropdownMenuItem>
+                ) : null}
+                {onDelete ? (
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => onDelete(department)}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete department"}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           )
         },
       },
     ]
-  }, [onEdit])
+  }, [deletingDepartmentId, onDelete, onEdit])
 
   const table = useReactTable({
     data: departments,

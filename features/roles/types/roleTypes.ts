@@ -17,22 +17,23 @@ export const RoleRequestSchema = z.object({
 })
 
 export const RoleResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
   description: z.string().nullable(),
   priority: z.number(),
   permissionCount: z.number(),
+  permissionIds: z.array(z.string()).optional(),
 })
 
 export const PermissionResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   module: z.string(),
   action: z.string(),
 })
 
 export const AssignPermissionsRequestSchema = z.object({
   permissionIds: z
-    .array(z.string().uuid())
+    .array(z.string().min(1))
     .min(1, "Select at least one permission"),
 })
 

@@ -1,21 +1,78 @@
 import axios from "axios"
-import Cookies from "js-cookie"
+import { useAuthStore } from "@/store/authStore"
+
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1"
 
 export const api = axios.create({
-  baseURL: "http://localhost:8080/api/v1",
+  baseURL: apiUrl,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
 })
 
-api.interceptors.request.use((config) => {
-  const token = Cookies.get("access_token")
-
-  if (!token) {
-    return config
+export function getApiErrorMessage(error: unknown, fallback: string) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (
+      error as {
+        response?: {
+          data?: {
+            message?: string
+            error?: string
+          }
+        }
+      }
+    ).response?.data?.message === "string"
+  ) {
+    return (
+      error as {
+        response?: {
+          data?: {
+            message?: string
+          }
+        }
+      }
+    ).response?.data?.message as string
   }
 
-  config.headers = config.headers ?? {}
-  config.headers.Authorization = `Bearer ${token}`
-  return config
-})
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (
+      error as {
+        response?: {
+          data?: {
+            error?: string
+          }
+        }
+      }
+    ).response?.data?.error === "string"
+  ) {
+    return (
+      error as {
+        response?: {
+          data?: {
+            error?: string
+          }
+        }
+      }
+    ).response?.data?.error as string
+  }
+
+  return fallback
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      useAuthStore.getState().clearAuth()
+    }
+
+    return Promise.reject(error)
+  }
+)

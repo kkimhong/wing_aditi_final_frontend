@@ -1,20 +1,18 @@
 import type { ApprovalExpense } from "../schema/approvalSchema"
-
-type RoleName = "ADMIN" | "MANAGER" | "EMPLOYEE" | null
+import { ACCESS_RULES, canManageAllExpenses, hasAnyPermission } from "@/lib/rbac"
 
 export function canManageAllApprovals(
-  roleName: RoleName,
+  roleName: string | null,
   permissions: string[]
 ) {
-  if (!roleName && permissions.length === 0) {
-    return true
-  }
+  return canManageAllExpenses(roleName, permissions)
+}
 
-  return (
-    roleName === "ADMIN" ||
-    permissions.includes("settings:manage_roles") ||
-    permissions.includes("expenses:read_all")
-  )
+export function canAccessApprovalWorkspace(
+  roleName: string | null,
+  permissions: string[]
+) {
+  return hasAnyPermission(roleName, permissions, ACCESS_RULES.viewApprovals)
 }
 
 export function canApproveExpense(

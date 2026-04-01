@@ -1,17 +1,15 @@
-// store/authStore.ts
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import Cookies from "js-cookie"
 
 interface AuthStore {
   email: string | null
   permissions: string[]
-  roleName: "ADMIN" | "MANAGER" | "EMPLOYEE" | null
+  roleName: string | null
   departmentName: string | null
   setAuth: (
     email: string,
     permissions: string[],
-    roleName?: "ADMIN" | "MANAGER" | "EMPLOYEE" | null,
+    roleName?: string | null,
     departmentName?: string | null
   ) => void
   clearAuth: () => void
@@ -30,8 +28,6 @@ export const useAuthStore = create<AuthStore>()(
         set({ email, permissions, roleName, departmentName }),
 
       clearAuth: () => {
-        Cookies.remove("access_token")
-        Cookies.remove("permissions")
         set({
           email: null,
           permissions: [],

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { RoleForm } from "@/features/roles/components/RoleForm"
 import { RoleTable } from "@/features/roles/components/RoleTable"
 import { RolePermissionsSheet } from "@/features/roles/components/RolePermissionsSheet"
@@ -11,6 +12,14 @@ import type {
   RoleRequest,
   RoleResponse,
 } from "@/features/roles/schema/roleSchema"
+import {
+  useAssignRolePermissions,
+  useCreateRole,
+  useDeleteRole,
+  useRolePermissionsCatalog,
+  useRoles,
+  useUpdateRole,
+} from "@/features/roles/hook/useRole"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,76 +31,60 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Plus, Search } from "lucide-react"
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission, PERMISSIONS } from "@/lib/rbac"
 
-type RoleWithPermissions = Omit<RoleResponse, "permissionCount"> & {
+interface RoleWithPermissions extends RoleResponse {
   permissionIds: string[]
 }
 
-const permissionCatalog: PermissionResponse[] = [
-  { id: "a1f5b4a0-9788-4f8e-8f81-b1b4cb35f301", module: "Expenses", action: "create" },
-  { id: "f380f84b-cc6e-4df8-bcef-d33ed42fe649", module: "Expenses", action: "read_own" },
-  { id: "2cf240e4-0a5d-4fef-90f8-e7671896da63", module: "Expenses", action: "read_all" },
-  { id: "c60be2e1-c7cb-404a-a523-5ec38ec9f4f8", module: "Expenses", action: "submit" },
-  { id: "56785fb6-4377-4aaf-a7f3-f31ecf67f822", module: "Approvals", action: "approve" },
-  { id: "4214a6c4-f43a-4094-bf34-249fcb8df4f3", module: "Approvals", action: "reject" },
-  { id: "e2d4c2a4-cb80-4472-802c-a65aa3ebffe9", module: "Reports", action: "read" },
-  { id: "5fd74c20-bfc3-4c35-9cc5-c50f229f6144", module: "Reports", action: "export" },
-  { id: "7b7bb353-b1fc-4c89-8080-51578b1d136b", module: "Users", action: "create" },
-  { id: "2ec6283d-9858-475d-9ef9-39f1ef95ad8a", module: "Users", action: "read" },
-  { id: "58fe8cd8-8f4b-4aeb-90a3-13a64becf97e", module: "Users", action: "update" },
-  { id: "b72307cd-95cb-40d7-a3cc-e3822d66fef5", module: "Categories", action: "create" },
-  { id: "c3588eaf-c7f8-419f-bd7e-b3fdbe128fa1", module: "Categories", action: "read" },
-  { id: "cfa31f23-2f7c-4642-8657-365477006fda", module: "Categories", action: "update" },
-  { id: "dc3ee586-269f-4734-95ac-72f7a3cbd6f2", module: "Departments", action: "create" },
-  { id: "d49880dc-ff4f-46e5-8542-9d9ac0c8c328", module: "Departments", action: "read" },
-  { id: "8b0223e3-0472-47dc-b1a7-d89fb58d32d0", module: "Departments", action: "update" },
-  { id: "9ec97ded-300f-44e7-b55a-4762de658c4a", module: "Settings", action: "manage_roles" },
-]
-
-const initialRoles: RoleWithPermissions[] = [
-  {
-    id: "18166f92-ac8f-47f2-b8d9-f9ff4e6ca263",
-    name: "Administrator",
-    description: "Full system access across all modules",
-    priority: 100,
-    permissionIds: permissionCatalog.map((permission) => permission.id),
-  },
-  {
-    id: "9a7f8948-4602-4a43-bd49-204f2f94b4f7",
-    name: "Manager",
-    description: "Can review team expenses and approvals",
-    priority: 70,
-    permissionIds: pickPermissions([
-      ["Expenses", "create"],
-      ["Expenses", "read_own"],
-      ["Expenses", "read_all"],
-      ["Expenses", "submit"],
-      ["Approvals", "approve"],
-      ["Approvals", "reject"],
-      ["Reports", "read"],
-    ]),
-  },
-  {
-    id: "80bc0f5d-d6ef-4304-ba59-f0de830f6f30",
-    name: "Employee",
-    description: "Can create and submit own expenses",
-    priority: 30,
-    permissionIds: pickPermissions([
-      ["Expenses", "create"],
-      ["Expenses", "read_own"],
-      ["Expenses", "submit"],
-      ["Reports", "read"],
-    ]),
-  },
-]
-
 export default function RolesPage() {
-  const [roles, setRoles] = useState<RoleWithPermissions[]>(initialRoles)
+  const { permissions, roleName } = useAuthStore()
+  const canManageRoles = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.manageRoles
+  )
+
+  const {
+    data: fetchedRoles,
+    isLoading: isLoadingRoles,
+    error: rolesError,
+  } = useRoles(canManageRoles)
+  const {
+    data: fetchedPermissionCatalog,
+    isLoading: isLoadingPermissions,
+    error: permissionsError,
+  } = useRolePermissionsCatalog(canManageRoles)
+
+  const createRoleMutation = useCreateRole()
+  const updateRoleMutation = useUpdateRole()
+  const deleteRoleMutation = useDeleteRole()
+  const assignPermissionsMutation = useAssignRolePermissions()
+
   const [searchQuery, setSearchQuery] = useState("")
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false)
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
   const [managingRoleId, setManagingRoleId] = useState<string | null>(null)
+
+  const roles: RoleWithPermissions[] = useMemo(() => {
+    return (fetchedRoles ?? []).map((role) => ({
+      ...role,
+      permissionIds: Array.isArray(role.permissionIds) ? role.permissionIds : [],
+    }))
+  }, [fetchedRoles])
+
+  const permissionCatalog = useMemo<PermissionResponse[]>(() => {
+    if (Array.isArray(fetchedPermissionCatalog) && fetchedPermissionCatalog.length > 0) {
+      return fetchedPermissionCatalog
+    }
+
+    const rolePermissionIds = roles.flatMap((role) => role.permissionIds)
+    const knownPermissions = Object.values(PERMISSIONS)
+
+    return buildPermissionCatalog([...rolePermissionIds, ...knownPermissions])
+  }, [fetchedPermissionCatalog, roles])
 
   const filteredRoles = useMemo(() => {
     const term = searchQuery.trim().toLowerCase()
@@ -116,7 +109,8 @@ export default function RolesPage() {
       name: role.name,
       description: role.description,
       priority: role.priority,
-      permissionCount: role.permissionIds.length,
+      permissionCount:
+        role.permissionIds.length > 0 ? role.permissionIds.length : role.permissionCount,
     }))
   }, [filteredRoles])
 
@@ -124,7 +118,8 @@ export default function RolesPage() {
   const managingRole = roles.find((role) => role.id === managingRoleId) ?? null
 
   const totalAssignedPermissions = roles.reduce(
-    (total, role) => total + role.permissionIds.length,
+    (total, role) =>
+      total + (role.permissionIds.length > 0 ? role.permissionIds.length : role.permissionCount),
     0
   )
 
@@ -132,57 +127,75 @@ export default function RolesPage() {
     roles.flatMap((role) => role.permissionIds)
   ).size
 
-  const handleSaveRole = (data: RoleRequest) => {
-    if (editingRoleId) {
-      setRoles((current) =>
-        current.map((role) =>
-          role.id === editingRoleId
-            ? {
-                ...role,
-                name: data.name,
-                description: data.description ?? null,
-                priority: data.priority,
-              }
-            : role
-        )
-      )
-    } else {
-      const nextRole: RoleWithPermissions = {
-        id: createId(),
-        name: data.name,
-        description: data.description ?? null,
-        priority: data.priority,
-        permissionIds: [],
+  const resetMutations = () => {
+    createRoleMutation.reset()
+    updateRoleMutation.reset()
+    deleteRoleMutation.reset()
+    assignPermissionsMutation.reset()
+  }
+
+  const handleSaveRole = async (data: RoleRequest) => {
+    resetMutations()
+
+    try {
+      if (editingRoleId) {
+        await updateRoleMutation.mutateAsync({ id: editingRoleId, payload: data })
+      } else {
+        await createRoleMutation.mutateAsync(data)
       }
 
-      setRoles((current) => [nextRole, ...current])
+      setRoleDialogOpen(false)
+      setEditingRoleId(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
     }
-
-    setRoleDialogOpen(false)
-    setEditingRoleId(null)
   }
 
-  const handleAssignPermissions = (data: AssignPermissionsRequest) => {
+  const handleAssignPermissions = async (data: AssignPermissionsRequest) => {
     if (!managingRoleId) return
 
-    setRoles((current) =>
-      current.map((role) =>
-        role.id === managingRoleId
-          ? { ...role, permissionIds: data.permissionIds }
-          : role
-      )
-    )
+    resetMutations()
 
-    setPermissionSheetOpen(false)
-    setManagingRoleId(null)
+    try {
+      await assignPermissionsMutation.mutateAsync({
+        roleId: managingRoleId,
+        payload: data,
+      })
+
+      setPermissionSheetOpen(false)
+      setManagingRoleId(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
   }
 
-  const handleDeleteRole = (role: RoleResponse) => {
-    if (role.name === "Administrator") {
+  const handleDeleteRole = async (role: RoleResponse) => {
+    if (role.name.toLowerCase() === "administrator") {
       return
     }
 
-    setRoles((current) => current.filter((item) => item.id !== role.id))
+    resetMutations()
+
+    try {
+      await deleteRoleMutation.mutateAsync(role.id)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
+  }
+
+  const mutationErrorMessage =
+    (createRoleMutation.error as Error | null)?.message ??
+    (updateRoleMutation.error as Error | null)?.message ??
+    (deleteRoleMutation.error as Error | null)?.message ??
+    (assignPermissionsMutation.error as Error | null)?.message ??
+    null
+
+  if (!canManageRoles) {
+    return (
+      <DashboardLayout title="Roles & Permissions">
+        <AccessDenied description="You are not allowed to manage roles and permissions." />
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -194,6 +207,7 @@ export default function RolesPage() {
           className="gap-1.5"
           onClick={() => {
             setEditingRoleId(null)
+            resetMutations()
             setRoleDialogOpen(true)
           }}
         >
@@ -211,6 +225,30 @@ export default function RolesPage() {
         </h2>
       </section>
 
+      {isLoadingRoles ? (
+        <div className="rounded-none border bg-card p-4 text-sm text-muted-foreground">
+          Loading roles...
+        </div>
+      ) : null}
+
+      {rolesError ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load roles: {rolesError.message}
+        </div>
+      ) : null}
+
+      {permissionsError && permissionCatalog.length === 0 ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load permissions: {permissionsError.message}
+        </div>
+      ) : null}
+
+      {mutationErrorMessage ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {mutationErrorMessage}
+        </div>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="rounded-none stats-card">
           <CardHeader>
@@ -227,6 +265,9 @@ export default function RolesPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">{permissionCatalog.length}</p>
+            {isLoadingPermissions ? (
+              <p className="text-xs text-muted-foreground">Loading permissions...</p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -262,10 +303,12 @@ export default function RolesPage() {
         roles={roleRows}
         onEdit={(role) => {
           setEditingRoleId(role.id)
+          resetMutations()
           setRoleDialogOpen(true)
         }}
         onManagePermissions={(role) => {
           setManagingRoleId(role.id)
+          resetMutations()
           setPermissionSheetOpen(true)
         }}
         onDelete={handleDeleteRole}
@@ -277,6 +320,7 @@ export default function RolesPage() {
           setRoleDialogOpen(open)
           if (!open) {
             setEditingRoleId(null)
+            resetMutations()
           }
         }}
       >
@@ -292,6 +336,7 @@ export default function RolesPage() {
 
           <RoleForm
             onSubmit={handleSaveRole}
+            isLoading={createRoleMutation.isPending || updateRoleMutation.isPending}
             defaultValues={
               editingRole
                 ? {
@@ -311,34 +356,61 @@ export default function RolesPage() {
           setPermissionSheetOpen(open)
           if (!open) {
             setManagingRoleId(null)
+            resetMutations()
           }
         }}
         roleName={managingRole?.name}
         permissions={permissionCatalog}
         currentPermissionIds={managingRole?.permissionIds ?? []}
         onSubmit={handleAssignPermissions}
+        isLoading={assignPermissionsMutation.isPending}
       />
     </DashboardLayout>
   )
 }
 
-function pickPermissions(keys: Array<[string, string]>) {
-  const ids = keys
-    .map(([module, action]) => {
-      return permissionCatalog.find(
-        (permission) => permission.module === module && permission.action === action
-      )?.id
-    })
-    .filter((id): id is string => Boolean(id))
+function buildPermissionCatalog(keys: string[]): PermissionResponse[] {
+  const uniqueKeys = Array.from(
+    new Set(keys.map((key) => key.trim()).filter(Boolean))
+  )
 
-  return ids
+  return uniqueKeys
+    .map(toPermissionResponse)
+    .filter((permission): permission is PermissionResponse => permission !== null)
+    .sort((a, b) => {
+      const moduleCompare = a.module.localeCompare(b.module)
+      if (moduleCompare !== 0) {
+        return moduleCompare
+      }
+
+      return a.action.localeCompare(b.action)
+    })
 }
 
-function createId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID()
+function toPermissionResponse(key: string): PermissionResponse | null {
+  if (!key) {
+    return null
   }
 
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const [rawModule, rawAction] = key.split(":")
+  const moduleName = normalizeLabel(rawModule || "general")
+  const actionName = normalizeActionLabel(rawAction || rawModule || key)
+
+  return {
+    id: key,
+    module: moduleName,
+    action: actionName,
+  }
 }
 
+function normalizeLabel(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((chunk) => chunk[0].toUpperCase() + chunk.slice(1).toLowerCase())
+    .join(" ")
+}
+
+function normalizeActionLabel(value: string) {
+  return value.trim().toLowerCase()
+}

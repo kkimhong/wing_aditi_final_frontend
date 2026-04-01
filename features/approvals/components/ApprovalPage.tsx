@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { ExpenseTable } from "@/features/expenses/components/ExpenseTable"
 import { ApprovalFilters, type ApprovalFiltersState } from "./ApprovalFilters"
 import { ApprovalSummaryCards } from "./ApprovalSummaryCards"
@@ -12,11 +13,17 @@ import type {
   RejectApprovalRequest,
 } from "../schema/approvalSchema"
 import { useAuthStore } from "@/store/authStore"
-import { useApprovalsStore } from "@/store/approvalsStore"
 import {
+  canAccessApprovalWorkspace,
   canApproveExpense,
   canManageAllApprovals,
 } from "../lib/approvalAccess"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
+import {
+  useApprovalExpenses,
+  useApproveExpense,
+  useRejectExpense,
+} from "../hook/useApproval"
 
 const initialFilters: ApprovalFiltersState = {
   search: "",
@@ -27,19 +34,23 @@ const initialFilters: ApprovalFiltersState = {
 
 export function ApprovalPage() {
   const { permissions, roleName, departmentName } = useAuthStore()
-  const expenses = useApprovalsStore((state) => state.expenses)
-  const approveExpense = useApprovalsStore((state) => state.approveExpense)
-  const rejectExpense = useApprovalsStore((state) => state.rejectExpense)
   const [filters, setFilters] = useState<ApprovalFiltersState>(initialFilters)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [detailsExpenseId, setDetailsExpenseId] = useState<string | null>(null)
 
-  const selectedExpense =
-    expenses.find((expense) => expense.id === selectedExpenseId) ?? null
-  const detailExpense =
-    expenses.find((expense) => expense.id === detailsExpenseId) ?? null
+  const canViewPage = canAccessApprovalWorkspace(roleName, permissions)
+  const canApprovePermission = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.approveExpense
+  )
+  const canRejectPermission = hasAnyPermission(
+    roleName,
+    permissions,
+    ACCESS_RULES.rejectExpense
+  )
 
   const canManageAll = useMemo(
     () => canManageAllApprovals(roleName, permissions),
@@ -47,6 +58,29 @@ export function ApprovalPage() {
   )
 
   const approverDepartment = departmentName ?? "Engineering"
+
+  const { data: fetchedExpenses, isLoading, error } = useApprovalExpenses(
+    canViewPage,
+    canManageAll
+  )
+  const approveExpenseMutation = useApproveExpense()
+  const rejectExpenseMutation = useRejectExpense()
+
+  const expenses = fetchedExpenses ?? []
+  const selectedExpense =
+    expenses.find((expense) => expense.id === selectedExpenseId) ?? null
+  const detailExpense =
+    expenses.find((expense) => expense.id === detailsExpenseId) ?? null
+
+  const mutationErrorMessage =
+    (approveExpenseMutation.error as Error | null)?.message ??
+    (rejectExpenseMutation.error as Error | null)?.message ??
+    null
+
+  const resetMutations = () => {
+    approveExpenseMutation.reset()
+    rejectExpenseMutation.reset()
+  }
 
   const scopedExpenses = useMemo(() => {
     if (canManageAll) {
@@ -109,16 +143,26 @@ export function ApprovalPage() {
     return count
   }, [filters])
 
-  const handleApprove = (expense: ApprovalExpense) => {
+  const handleApprove = async (expense: ApprovalExpense) => {
+    if (!canApprovePermission) {
+      return
+    }
+
     if (!canApproveExpense(expense, canManageAll, approverDepartment)) {
       return
     }
 
-    approveExpense(expense.id)
+    resetMutations()
+
+    try {
+      await approveExpenseMutation.mutateAsync(expense.id)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
   }
 
-  const handleReject = (data: RejectApprovalRequest) => {
-    if (!selectedExpenseId) return
+  const handleReject = async (data: RejectApprovalRequest) => {
+    if (!canRejectPermission || !selectedExpenseId) return
 
     const currentExpense = expenses.find((expense) => expense.id === selectedExpenseId)
     if (
@@ -130,10 +174,27 @@ export function ApprovalPage() {
       return
     }
 
-    rejectExpense(selectedExpenseId, data.comment)
+    resetMutations()
 
-    setRejectOpen(false)
-    setSelectedExpenseId(null)
+    try {
+      await rejectExpenseMutation.mutateAsync({
+        id: selectedExpenseId,
+        payload: data,
+      })
+
+      setRejectOpen(false)
+      setSelectedExpenseId(null)
+    } catch {
+      // Mutation errors are surfaced from react-query state
+    }
+  }
+
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="Approvals">
+        <AccessDenied description="You are not allowed to access the approval workspace." />
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -149,9 +210,27 @@ export function ApprovalPage() {
 
       <ApprovalSummaryCards expenses={scopedExpenses} />
 
+      {isLoading && expenses.length === 0 ? (
+        <div className="rounded-none border bg-card p-4 text-sm text-muted-foreground">
+          Loading approvals...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load approvals: {error.message}
+        </div>
+      ) : null}
+
+      {mutationErrorMessage ? (
+        <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {mutationErrorMessage}
+        </div>
+      ) : null}
+
       <div className="rounded-none border bg-card p-3 text-xs text-muted-foreground">
         {canManageAll
-          ? "You are viewing company-wide approvals as an admin."
+          ? "You are viewing company-wide approvals."
           : `You are viewing ${approverDepartment} approvals as a department manager.`}
       </div>
 
@@ -172,21 +251,27 @@ export function ApprovalPage() {
         showApprover
         emptyMessage="No expenses match your approval filters."
         rowActions={(expense) => {
-          const canApprove = canApproveExpense(
+          const canApproveInScope = canApproveExpense(
             expense,
             canManageAll,
             approverDepartment
           )
 
-          if (expense.status === "SUBMITTED" && canApprove) {
-            return [
-              { label: "View details", action: "view" },
-              { label: "Approve", action: "approve" },
-              { label: "Reject", action: "reject", destructive: true },
-            ]
+          const actions: Array<{
+            label: string
+            action: string
+            destructive?: boolean
+          }> = [{ label: "View details", action: "view" }]
+
+          if (expense.status === "SUBMITTED" && canApproveInScope && canApprovePermission) {
+            actions.push({ label: "Approve", action: "approve" })
           }
 
-          return [{ label: "View details", action: "view" }]
+          if (expense.status === "SUBMITTED" && canApproveInScope && canRejectPermission) {
+            actions.push({ label: "Reject", action: "reject", destructive: true })
+          }
+
+          return actions
         }}
         onRowAction={(expense, action) => {
           if (action === "view") {
@@ -196,7 +281,7 @@ export function ApprovalPage() {
           }
 
           if (action === "approve") {
-            handleApprove(expense)
+            void handleApprove(expense)
             return
           }
 
@@ -216,6 +301,7 @@ export function ApprovalPage() {
           }
         }}
         onReject={handleReject}
+        isLoading={rejectExpenseMutation.isPending}
       />
 
       <ApprovalExpenseDetailsDialog

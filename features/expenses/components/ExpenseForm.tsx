@@ -20,16 +20,22 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { X } from "lucide-react"
+import { uploadReceipt } from "@/lib/uploadReceipt"
 
 interface CategoryOption {
   id: string
   name: string
+  limitPerSubmission?: number | null
 }
 
 interface ExpenseFormProps {
-  onSubmit: (data: CreateExpenseRequest) => void
+  onSubmit: (
+    data: CreateExpenseRequest,
+    submitForApproval?: boolean
+  ) => Promise<void> | void
   defaultValues?: Partial<CreateExpenseRequest>
   categories?: CategoryOption[]
+  allowSubmit?: boolean
   isLoading?: boolean
 }
 
@@ -37,12 +43,16 @@ export function ExpenseForm({
   onSubmit,
   defaultValues,
   categories = [],
+  allowSubmit = true,
   isLoading,
 }: ExpenseFormProps) {
   const [receiptPreview, setReceiptPreview] = useState<string>(
     defaultValues?.receiptUrl ?? ""
   )
   const [receiptFileName, setReceiptFileName] = useState<string>("")
+  const [selectedReceiptFile, setSelectedReceiptFile] = useState<File | null>(null)
+  const [submitIntent, setSubmitIntent] = useState<"draft" | "submit">("draft")
+  const [isUploading, setIsUploading] = useState(false)
   const previewUrlRef = useRef<string>("")
 
   const {
@@ -52,6 +62,7 @@ export function ExpenseForm({
     setError,
     clearErrors,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<CreateExpenseRequest>({
     resolver: zodResolver(CreateExpenseRequestSchema),
@@ -66,6 +77,18 @@ export function ExpenseForm({
     },
   })
 
+  const selectedCategoryId = watch("categoryId")
+  const currentAmount = watch("amount")
+  const currentCurrency = watch("currency")
+  const selectedCategory = categories.find(
+    (category) => category.id === selectedCategoryId
+  )
+  const selectedCategoryLimit =
+    typeof selectedCategory?.limitPerSubmission === "number" &&
+    Number.isFinite(selectedCategory.limitPerSubmission)
+      ? selectedCategory.limitPerSubmission
+      : null
+
   useEffect(() => {
     if (!defaultValues?.expenseDate) {
       setValue("expenseDate", new Date().toISOString().split("T")[0])
@@ -79,6 +102,21 @@ export function ExpenseForm({
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedCategoryLimit === null) {
+      return
+    }
+
+    if (
+      typeof currentAmount === "number" &&
+      Number.isFinite(currentAmount) &&
+      currentAmount <= selectedCategoryLimit &&
+      errors.amount?.type === "manual"
+    ) {
+      clearErrors("amount")
+    }
+  }, [clearErrors, currentAmount, errors.amount?.type, selectedCategoryLimit])
 
   const handleReceiptChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -103,7 +141,8 @@ export function ExpenseForm({
     previewUrlRef.current = objectUrl
     setReceiptPreview(objectUrl)
     setReceiptFileName(file.name)
-    setValue("receiptUrl", objectUrl, {
+    setSelectedReceiptFile(file)
+    setValue("receiptUrl", "", {
       shouldDirty: true,
       shouldValidate: true,
     })
@@ -117,6 +156,7 @@ export function ExpenseForm({
 
     setReceiptPreview("")
     setReceiptFileName("")
+    setSelectedReceiptFile(null)
     clearErrors("receiptUrl")
     setValue("receiptUrl", "", {
       shouldDirty: true,
@@ -124,8 +164,53 @@ export function ExpenseForm({
     })
   }
 
+  const handleFormSubmit = async (data: CreateExpenseRequest) => {
+    if (selectedCategoryLimit !== null && data.amount > selectedCategoryLimit) {
+      setError("amount", {
+        type: "manual",
+        message: `Amount exceeds ${
+          selectedCategory?.name ?? "selected category"
+        } budget (${formatCurrency(selectedCategoryLimit, data.currency)})`,
+      })
+      return
+    }
+
+    clearErrors("amount")
+
+    const nextPayload: CreateExpenseRequest = {
+      ...data,
+    }
+
+    if (selectedReceiptFile) {
+      setIsUploading(true)
+
+      try {
+        const publicUrl = await uploadReceipt(selectedReceiptFile)
+        nextPayload.receiptUrl = publicUrl
+        clearErrors("receiptUrl")
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : "Failed to upload receipt"
+        setError("receiptUrl", {
+          type: "manual",
+          message,
+        })
+        return
+      } finally {
+        setIsUploading(false)
+      }
+    }
+
+    await onSubmit(nextPayload, submitIntent === "submit")
+  }
+
+  const isEdit = Boolean(defaultValues)
+  const isBusy = Boolean(isLoading || isUploading)
+  const draftLabel = isEdit ? "Save Changes" : "Save Draft"
+  const submitLabel = isEdit ? "Save & Submit" : "Create & Submit"
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>
         <Input id="title" placeholder="Expense title" {...register("title")} />
@@ -192,6 +277,16 @@ export function ExpenseForm({
             {errors.categoryId.message}
           </p>
         )}
+        {selectedCategoryLimit !== null ? (
+          <p className="text-xs text-muted-foreground">
+            Category budget: {formatCurrency(selectedCategoryLimit, currentCurrency)}
+          </p>
+        ) : null}
+        {categories.length === 0 ? (
+          <p className="text-xs text-destructive">
+            No active categories available. Please ask an admin to create one.
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -262,13 +357,45 @@ export function ExpenseForm({
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading
-          ? "Saving..."
-          : defaultValues
-            ? "Update Expense"
-            : "Create Expense"}
-      </Button>
+      <div className={allowSubmit ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : ""}>
+        <Button
+          type="submit"
+          variant={allowSubmit ? "outline" : "default"}
+          className="w-full"
+          disabled={isBusy}
+          onClick={() => setSubmitIntent("draft")}
+        >
+          {isBusy ? "Saving..." : draftLabel}
+        </Button>
+
+        {allowSubmit ? (
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isBusy}
+            onClick={() => setSubmitIntent("submit")}
+          >
+            {isBusy ? "Submitting..." : submitLabel}
+          </Button>
+        ) : null}
+      </div>
     </form>
   )
+}
+
+function formatCurrency(value: number, currency: string) {
+  const normalizedCurrency =
+    typeof currency === "string" && currency.trim().length > 0
+      ? currency.trim().toUpperCase()
+      : "USD"
+
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return `${normalizedCurrency} ${value.toFixed(2)}`
+  }
 }

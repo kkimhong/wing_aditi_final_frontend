@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { AccessDenied } from "@/components/access-denied"
 import { ExpenseTable } from "@/features/expenses/components/ExpenseTable"
 import { ReportsSummaryCards } from "./ReportsSummaryCards"
 import { ReportsFilters } from "./ReportsFilters"
 import { reportExpenses } from "./reportMockData"
 import type { ReportExpense, ReportFilters } from "../schema/reportSchema"
+import { useAuthStore } from "@/store/authStore"
+import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 
 const initialFilters: ReportFilters = {
   status: "ALL",
@@ -18,6 +21,10 @@ const initialFilters: ReportFilters = {
 }
 
 export function ReportsPage() {
+  const { permissions, roleName } = useAuthStore()
+  const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewReports)
+  const canExport = hasAnyPermission(roleName, permissions, ACCESS_RULES.exportReports)
+
   const [filters, setFilters] = useState<ReportFilters>(initialFilters)
 
   const departments = useMemo(() => {
@@ -58,6 +65,10 @@ export function ReportsPage() {
   }, [filters])
 
   const handleExport = () => {
+    if (!canExport) {
+      return
+    }
+
     const exportRows =
       filters.exportMode === "MONTHLY" ? monthlyExpenses : filteredExpenses
 
@@ -72,6 +83,14 @@ export function ReportsPage() {
 
     const csv = toCsv(exportRows)
     downloadCsv(csv, fileName)
+  }
+
+  if (!canViewPage) {
+    return (
+      <DashboardLayout title="Reports">
+        <AccessDenied description="You are not allowed to view reports." />
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -92,6 +111,7 @@ export function ReportsPage() {
         departments={departments}
         activeFilterCount={activeFilterCount}
         resultCount={filteredExpenses.length}
+        canExport={canExport}
         onChange={(next) => setFilters((current) => ({ ...current, ...next }))}
         onClear={() => setFilters(initialFilters)}
         onExport={handleExport}
@@ -167,6 +187,3 @@ function getCurrentMonth() {
   const month = `${now.getMonth() + 1}`.padStart(2, "0")
   return `${now.getFullYear()}-${month}`
 }
-
-
-
