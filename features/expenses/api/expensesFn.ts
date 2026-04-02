@@ -114,6 +114,7 @@ export function normalizeExpense(raw: unknown): ExpenseResponse | null {
         row.created_by ??
         row.user
     ),
+    submittedByEmail: toSubmittedByEmail(row),
     departmentName: toDepartmentName(row),
     approvedBy: toNullablePersonName(
       row.approvedBy ?? row.approved_by ?? row.approver
@@ -322,6 +323,37 @@ function toCategoryName(row: Record<string, unknown>) {
   )
 }
 
+function toSubmittedByEmail(row: Record<string, unknown>) {
+  const directEmail = toNullableEmail(
+    row.submittedByEmail ??
+      row.submitted_by_email ??
+      row.createdByEmail ??
+      row.created_by_email
+  )
+
+  if (directEmail) {
+    return directEmail
+  }
+
+  const person =
+    row.submittedBy ??
+    row.submitted_by ??
+    row.createdBy ??
+    row.created_by ??
+    row.user
+
+  if (typeof person === "string") {
+    return toNullableEmail(person)
+  }
+
+  if (!person || typeof person !== "object") {
+    return null
+  }
+
+  const rowPerson = person as Record<string, unknown>
+  return toNullableEmail(rowPerson.email ?? rowPerson.mail ?? rowPerson.username)
+}
+
 function toPersonName(value: unknown) {
   if (typeof value === "string") {
     const direct = value.trim()
@@ -356,4 +388,13 @@ function toNullablePersonName(value: unknown) {
 
   const resolved = toPersonName(value)
   return resolved === "Unknown User" ? null : resolved
+}
+
+function toNullableEmail(value: unknown) {
+  const normalized = toNullableString(value)
+  if (!normalized) {
+    return null
+  }
+
+  return normalized.includes("@") ? normalized.toLowerCase() : null
 }

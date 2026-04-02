@@ -16,6 +16,7 @@ import { ExpenseSummaryCards } from "./ExpenseSummaryCards"
 import { ExpenseTable } from "./ExpenseTable"
 import { ExpenseCreateSheet } from "./ExpenseCreateSheet"
 import { ExpenseDetailsDialog } from "./ExpenseDetailsDialog"
+import type { ExpenseResponse } from "../schema/expenseSchema"
 import type { CreateExpenseRequest } from "../types/expenseTypes"
 import type { ExpenseStatus } from "@/types/common"
 import { Plus, Search } from "lucide-react"
@@ -39,18 +40,16 @@ const statusFilterItems: Array<{ label: string; value: "ALL" | ExpenseStatus }> 
 ]
 
 export function MyExpensesPage() {
-  const { permissions, roleName } = useAuthStore()
+  const { permissions, roleName, email } = useAuthStore()
   const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewMyExpenses)
   const canCreateExpense = hasAnyPermission(
     roleName,
     permissions,
     ACCESS_RULES.createExpense
   )
-  const canSubmitExpense = hasAnyPermission(
-    roleName,
-    permissions,
-    ACCESS_RULES.submitExpense
-  )
+  const canSubmitExpense =
+    hasAnyPermission(roleName, permissions, ACCESS_RULES.submitExpense) ||
+    hasAnyPermission(roleName, permissions, ACCESS_RULES.createExpense)
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -66,7 +65,28 @@ export function MyExpensesPage() {
   const submitExpenseMutation = useSubmitExpense()
   const deleteExpenseMutation = useDeleteExpense()
 
-  const expenses = fetchedExpenses ?? []
+  const allFetchedExpenses = fetchedExpenses ?? []
+  const expenses = useMemo(() => {
+    const normalizedEmail = (email ?? "").trim().toLowerCase()
+    if (!normalizedEmail) {
+      return allFetchedExpenses
+    }
+
+    const hasOwnerSignals = allFetchedExpenses.some(
+      (expense) =>
+        Boolean(expense.submittedByEmail) || looksLikeEmail(expense.submittedBy)
+    )
+
+    if (!hasOwnerSignals) {
+      return allFetchedExpenses
+    }
+
+    return allFetchedExpenses.filter((expense) =>
+      isOwnedExpense(expense, normalizedEmail)
+    )
+  }, [allFetchedExpenses, email])
+
+  const hiddenForeignExpenseCount = Math.max(allFetchedExpenses.length - expenses.length, 0)
   const categoryOptions = useMemo(() => {
     const categories = fetchedCategories ?? []
 
@@ -110,15 +130,8 @@ export function MyExpensesPage() {
     })
   }, [expenses, searchQuery, statusFilter])
 
-  const handleCreateExpense = async (
-    values: CreateExpenseRequest,
-    submitForApproval = false
-  ) => {
+  const handleCreateExpense = async (values: CreateExpenseRequest) => {
     if (!canCreateExpense) {
-      return
-    }
-
-    if (submitForApproval && !canSubmitExpense) {
       return
     }
 
@@ -130,22 +143,8 @@ export function MyExpensesPage() {
           id: editingExpenseId,
           payload: values,
         })
-
-        if (submitForApproval) {
-          await submitExpenseMutation.mutateAsync(editingExpenseId)
-        }
       } else {
-        const createdExpenseId = await createExpenseMutation.mutateAsync(values)
-
-        if (submitForApproval) {
-          if (!createdExpenseId) {
-            throw new Error(
-              "Expense was created but could not be auto-submitted. Please submit from the table."
-            )
-          }
-
-          await submitExpenseMutation.mutateAsync(createdExpenseId)
-        }
+        await createExpenseMutation.mutateAsync(values)
       }
 
       setSheetOpen(false)
@@ -233,6 +232,13 @@ export function MyExpensesPage() {
         </div>
       ) : null}
 
+      {hiddenForeignExpenseCount > 0 ? (
+        <div className="rounded-none border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+          Showing your own expenses only. {hiddenForeignExpenseCount} unrelated record
+          {hiddenForeignExpenseCount === 1 ? "" : "s"} were hidden.
+        </div>
+      ) : null}
+
       <section className="flex flex-col gap-3 rounded-none border bg-card p-4 md:flex-row md:items-end">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -277,20 +283,14 @@ export function MyExpensesPage() {
             destructive?: boolean
           }> = [{ label: "View details", action: "view" }]
 
-          if (
-            (expense.status === "DRAFT" || expense.status === "REJECTED") &&
-            canSubmitExpense
-          ) {
+          if (expense.status === "DRAFT" && canSubmitExpense) {
             actions.push({
-              label: expense.status === "REJECTED" ? "Resubmit" : "Submit",
+              label: "Submit",
               action: "submit",
             })
           }
 
-          if (
-            (expense.status === "DRAFT" || expense.status === "REJECTED") &&
-            canCreateExpense
-          ) {
+          if (expense.status === "DRAFT" && canCreateExpense) {
             actions.push({ label: "Edit", action: "edit" })
           }
 
@@ -344,7 +344,7 @@ export function MyExpensesPage() {
               : undefined
           }
           categories={categoryOptions}
-          allowSubmit={canSubmitExpense}
+          allowSubmit={false}
           isLoading={
             createExpenseMutation.isPending ||
             updateExpenseMutation.isPending ||
@@ -365,4 +365,21 @@ export function MyExpensesPage() {
       />
     </DashboardLayout>
   )
+}
+
+function isOwnedExpense(expense: ExpenseResponse, normalizedEmail: string) {
+  const submittedByEmail = (expense.submittedByEmail ?? "").trim().toLowerCase()
+  if (submittedByEmail) {
+    return submittedByEmail === normalizedEmail
+  }
+
+  if (looksLikeEmail(expense.submittedBy)) {
+    return expense.submittedBy.trim().toLowerCase() === normalizedEmail
+  }
+
+  return true
+}
+
+function looksLikeEmail(value: string) {
+  return value.includes("@")
 }

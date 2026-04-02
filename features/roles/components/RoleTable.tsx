@@ -27,6 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Pencil, ShieldCheck, Trash2 } from "lucide-react"
 
 interface RoleTableProps {
@@ -34,6 +40,7 @@ interface RoleTableProps {
   onEdit?: (role: RoleResponse) => void
   onManagePermissions?: (role: RoleResponse) => void
   onDelete?: (role: RoleResponse) => void
+  getDeleteBlockedReason?: (role: RoleResponse) => string | null
 }
 
 export function RoleTable({
@@ -41,6 +48,7 @@ export function RoleTable({
   onEdit,
   onManagePermissions,
   onDelete,
+  getDeleteBlockedReason,
 }: RoleTableProps) {
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -69,54 +77,89 @@ export function RoleTable({
         ),
       },
       {
-        accessorKey: "permissionCount",
-        header: () => <div className="text-right">Permissions</div>,
+        accessorKey: "userCount",
+        header: () => <div className="text-right">Users</div>,
         cell: ({ row }) => (
           <div className="text-right">
-            <Badge variant="secondary">{row.original.permissionCount}</Badge>
+            <Badge variant="outline">{row.original.userCount ?? 0}</Badge>
           </div>
         ),
       },
       {
+        accessorKey: "permissionCount",
+        header: () => <div className="text-right">Permissions</div>,
+        cell: ({ row }) => {
+          const permissionCount =
+            Array.isArray(row.original.permissions) && row.original.permissions.length > 0
+              ? row.original.permissions.length
+              : (row.original.permissionCount ?? 0)
+
+          return (
+            <div className="text-right">
+              <Badge variant="secondary">{permissionCount}</Badge>
+            </div>
+          )
+        },
+      },
+      {
         id: "actions",
-        header: () => <div className="w-[140px] text-right">Actions</div>,
+        header: () => <div className="w-[150px] text-right">Actions</div>,
         cell: ({ row }) => {
           const role = row.original
+          const deleteBlockedReason = getDeleteBlockedReason?.(role) ?? null
 
           return (
             <div className="flex justify-end gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onEdit?.(role)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span className="sr-only">Edit role</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onManagePermissions?.(role)}
-              >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span className="sr-only">Manage permissions</span>
-              </Button>
-              {onDelete ? (
+              {onEdit ? (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => onDelete(role)}
+                  onClick={() => onEdit(role)}
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  <span className="sr-only">Delete role</span>
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="sr-only">Edit role</span>
                 </Button>
+              ) : null}
+
+              {onManagePermissions ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onManagePermissions(role)}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span className="sr-only">Manage permissions</span>
+                </Button>
+              ) : null}
+
+              {onDelete ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => onDelete(role)}
+                          disabled={Boolean(deleteBlockedReason)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          <span className="sr-only">Delete role</span>
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {deleteBlockedReason ? (
+                      <TooltipContent>{deleteBlockedReason}</TooltipContent>
+                    ) : null}
+                  </Tooltip>
+                </TooltipProvider>
               ) : null}
             </div>
           )
         },
       },
     ]
-  }, [onDelete, onEdit, onManagePermissions])
+  }, [getDeleteBlockedReason, onDelete, onEdit, onManagePermissions])
 
   const table = useReactTable({
     data: roles,

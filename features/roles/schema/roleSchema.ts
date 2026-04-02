@@ -1,13 +1,14 @@
 export {
+  AssignPermissionsRequestSchema,
   RoleRequestSchema,
   RoleResponseSchema,
   PermissionResponseSchema,
-  AssignPermissionsRequestSchema,
 } from "../types/roleTypes"
 
 export type {
+  AssignPermissionsRequest,
   RoleRequest,
   RoleResponse,
   PermissionResponse,
-  AssignPermissionsRequest,
+  PermissionsByModule,
 } from "../types/roleTypes"

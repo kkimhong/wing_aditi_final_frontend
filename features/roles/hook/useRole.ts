@@ -1,14 +1,11 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   assignRolePermissionsFn,
   createRoleFn,
   deleteRoleFn,
-  getPermissionsFn,
+  getAllPermissionsFn,
   getRolesFn,
+  permissionQueryKey,
   rolePermissionQueryKey,
   roleQueryKey,
   updateRoleFn,
@@ -27,14 +24,16 @@ export const useRoles = (enabled = true) => {
   })
 }
 
-export const useRolePermissionsCatalog = (enabled = true) => {
+export const useAllPermissions = (enabled = true) => {
   return useQuery({
-    queryKey: rolePermissionQueryKey,
-    queryFn: getPermissionsFn,
+    queryKey: permissionQueryKey,
+    queryFn: getAllPermissionsFn,
     staleTime: 60_000,
     enabled,
   })
 }
+
+export const useRolePermissionsCatalog = useAllPermissions
 
 export const useCreateRole = () => {
   const queryClient = useQueryClient()

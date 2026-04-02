@@ -6,95 +6,67 @@ import type {
   RoleResponse,
 } from "../schema/roleSchema"
 
-export type RoleWithPermissionsResponse = RoleResponse & {
-  permissionIds: string[]
-}
-
 export const roleQueryKey = ["roles"] as const
-export const rolePermissionQueryKey = ["permissions"] as const
+export const permissionQueryKey = ["permissions"] as const
+export const rolePermissionQueryKey = permissionQueryKey
 
-export const getRolesFn = async (): Promise<RoleWithPermissionsResponse[]> => {
+export const getRolesFn = async (): Promise<RoleResponse[]> => {
   try {
     const response = await api.get("/roles")
     const payload = response.data?.data ?? response.data
 
-    if (!Array.isArray(payload)) {
-      return []
-    }
-
-    return payload
+    return toCollection(payload)
       .map(normalizeRole)
-      .filter((role): role is RoleWithPermissionsResponse => role !== null)
+      .filter((role): role is RoleResponse => role !== null)
   } catch (error: unknown) {
-    const message = getApiErrorMessage(error, "Failed to fetch roles")
-    throw new Error(message)
+    throw new Error(getApiErrorMessage(error, "Failed to fetch roles"))
   }
 }
 
-export const createRoleFn = async (payload: RoleRequest) => {
+export const createRoleFn = async (payload: RoleRequest): Promise<void> => {
   try {
     await api.post("/roles", toRolePayload(payload))
   } catch (error: unknown) {
-    const message = getApiErrorMessage(error, "Failed to create role")
-    throw new Error(message)
+    throw new Error(getApiErrorMessage(error, "Failed to create role"))
   }
 }
 
-export const updateRoleFn = async (id: string, payload: RoleRequest) => {
+export const updateRoleFn = async (
+  id: string,
+  payload: RoleRequest
+): Promise<void> => {
   try {
     await api.put(`/roles/${id}`, toRolePayload(payload))
   } catch (error: unknown) {
-    const message = getApiErrorMessage(error, "Failed to update role")
-    throw new Error(message)
+    throw new Error(getApiErrorMessage(error, "Failed to update role"))
   }
 }
 
-export const deleteRoleFn = async (id: string) => {
+export const deleteRoleFn = async (id: string): Promise<void> => {
   try {
     await api.delete(`/roles/${id}`)
   } catch (error: unknown) {
-    const message = getApiErrorMessage(error, "Failed to delete role")
-    throw new Error(message)
+    throw new Error(getApiErrorMessage(error, "Failed to delete role"))
   }
 }
 
-export const getPermissionsFn = async (): Promise<PermissionResponse[]> => {
-  const tryPaths = ["/permissions", "/roles/permissions"]
-  let lastError: unknown = null
+export const getAllPermissionsFn = async (): Promise<PermissionResponse[]> => {
+  try {
+    const response = await api.get("/permissions")
+    const payload = response.data?.data ?? response.data
 
-  for (const path of tryPaths) {
-    try {
-      const response = await api.get(path)
-      const payload = response.data?.data ?? response.data
-
-      if (!Array.isArray(payload)) {
-        return []
-      }
-
-      return payload
-        .map(normalizePermission)
-        .filter(
-          (permission): permission is PermissionResponse => permission !== null
-        )
-    } catch (error: unknown) {
-      lastError = error
-    }
+    return toCollection(payload)
+      .map(normalizePermission)
+      .filter((permission): permission is PermissionResponse => permission !== null)
+  } catch (error: unknown) {
+    throw new Error(getApiErrorMessage(error, "Failed to fetch permissions"))
   }
-
-  // Some backends do not expose a dedicated permissions endpoint.
-  // Treat 404 as "no remote catalog" and let UI fallback to local derived catalog.
-  if (getErrorStatus(lastError) === 404) {
-    return []
-  }
-
-  const message = getApiErrorMessage(lastError, "Failed to fetch permissions")
-  throw new Error(message)
 }
 
 export const assignRolePermissionsFn = async (
   roleId: string,
   payload: AssignPermissionsRequest
-) => {
+): Promise<void> => {
   const requestBody = {
     permissionIds: payload.permissionIds,
   }
@@ -105,42 +77,47 @@ export const assignRolePermissionsFn = async (
     try {
       await api.post(`/roles/${roleId}/permissions`, requestBody)
     } catch (secondError: unknown) {
-      const message = getApiErrorMessage(
-        secondError ?? firstError,
-        "Failed to assign role permissions"
+      throw new Error(
+        getApiErrorMessage(
+          secondError ?? firstError,
+          "Failed to assign role permissions"
+        )
       )
-      throw new Error(message)
     }
   }
 }
 
-function normalizeRole(raw: unknown): RoleWithPermissionsResponse | null {
+function normalizeRole(raw: unknown): RoleResponse | null {
   if (!raw || typeof raw !== "object") {
     return null
   }
 
   const row = raw as Record<string, unknown>
-  const id = String(row.id ?? "").trim()
-  const name = String(row.name ?? "").trim()
+  const id = toNonEmptyString(row.id)
+  const name = toNonEmptyString(row.name)
 
   if (!id || !name) {
     return null
   }
 
-  const permissionIds = toPermissionIds(
-    row.permissionIds ?? row.permission_ids ?? row.permissions
-  )
+  const permissions = toPermissions(row.permissions)
+  const permissionIds =
+    toStringArray(row.permissionIds ?? row.permission_ids).length > 0
+      ? toStringArray(row.permissionIds ?? row.permission_ids)
+      : permissions.map((permission) => permission.id)
 
   return {
     id,
     name,
     description: toNullableString(row.description),
     priority: toNumber(row.priority, 0),
+    permissions,
+    permissionIds,
     permissionCount: toNumber(
       row.permissionCount ?? row.permission_count,
       permissionIds.length
     ),
-    permissionIds,
+    userCount: resolveUserCount(row),
   }
 }
 
@@ -150,58 +127,138 @@ function normalizePermission(raw: unknown): PermissionResponse | null {
   }
 
   const row = raw as Record<string, unknown>
-  const id = String(row.id ?? row.permissionId ?? row.permission_id ?? "").trim()
-  const moduleName =
-    toNullableString(row.module) ?? toNullableString(row.group) ?? "General"
+
+  const rawModule =
+    toNullableString(row.module) ??
+    toNullableString(row.group) ??
+    toNullableString(row.domain)
 
   const rawAction =
     toNullableString(row.action) ??
     toNullableString(row.name) ??
     toNullableString(row.permission)
 
-  if (!id || !rawAction) {
+  const rawKey =
+    toNullableString(row.key) ??
+    toNullableString(row.code) ??
+    toNullableString(row.authority)
+
+  const parsedFromKey = parsePermissionKey(rawKey)
+  const parsedFromAction = parsePermissionKey(rawAction)
+
+  const module =
+    rawModule ?? parsedFromKey?.module ?? parsedFromAction?.module ?? "General"
+  const action =
+    (parsedFromKey?.action ?? parsedFromAction?.action ?? rawAction)?.trim() ?? ""
+
+  if (!action) {
     return null
   }
 
-  const action = rawAction.includes(":")
-    ? rawAction.split(":")[1] ?? rawAction
-    : rawAction
+  const key = rawKey ?? `${toKeyChunk(module)}:${toKeyChunk(action)}`
+  const id =
+    toNullableString(row.id) ??
+    toNullableString(row.permissionId ?? row.permission_id) ??
+    key
 
   return {
     id,
-    module: moduleName,
+    module,
     action,
+    key,
   }
 }
 
 function toRolePayload(payload: RoleRequest) {
-  return {
+  const normalizedPermissionIds = Array.isArray(payload.permissionIds)
+    ? payload.permissionIds
+        .map((id) => toNullableString(id))
+        .filter((id): id is string => Boolean(id))
+    : []
+
+  const requestBody: Record<string, unknown> = {
     name: payload.name,
     description: payload.description?.trim() || null,
     priority: payload.priority,
   }
+
+  if (normalizedPermissionIds.length > 0) {
+    requestBody.permissionIds = normalizedPermissionIds
+  }
+
+  return requestBody
 }
 
-function toPermissionIds(value: unknown) {
+function resolveUserCount(row: Record<string, unknown>) {
+  const explicitCount = toNumber(
+    row.userCount ??
+      row.user_count ??
+      row.assignedUsersCount ??
+      row.assigned_users_count,
+    -1
+  )
+
+  if (explicitCount >= 0) {
+    return explicitCount
+  }
+
+  const users = row.users
+  if (Array.isArray(users)) {
+    return users.length
+  }
+
+  const members = row.members
+  if (Array.isArray(members)) {
+    return members.length
+  }
+
+  return 0
+}
+
+function toPermissions(value: unknown): PermissionResponse[] {
   if (!Array.isArray(value)) {
     return []
   }
 
   return value
-    .map((item) => {
-      if (typeof item === "string") {
-        return item.trim()
-      }
+    .map(normalizePermission)
+    .filter((permission): permission is PermissionResponse => permission !== null)
+}
 
-      if (item && typeof item === "object") {
-        const row = item as Record<string, unknown>
-        const id = String(row.id ?? row.permissionId ?? row.permission_id ?? "").trim()
-        return id
-      }
+function toCollection(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+  }
 
-      return ""
-    })
-    .filter((id): id is string => Boolean(id))
+  if (!value || typeof value !== "object") {
+    return []
+  }
+
+  const row = value as Record<string, unknown>
+
+  if (Array.isArray(row.content)) {
+    return row.content
+  }
+
+  if (Array.isArray(row.items)) {
+    return row.items
+  }
+
+  if (Array.isArray(row.results)) {
+    return row.results
+  }
+
+  return []
+}
+
+function toStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((item) => toNullableString(item))
+    .filter((item): item is string => Boolean(item))
 }
 
 function toNumber(value: unknown, fallback: number) {
@@ -224,20 +281,34 @@ function toNullableString(value: unknown) {
     return null
   }
 
-  const next = value.trim()
-  return next.length > 0 ? next : null
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : null
 }
 
-function getErrorStatus(error: unknown) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (error as { response?: { status?: unknown } }).response?.status ===
-      "number"
-  ) {
-    return (error as { response?: { status?: number } }).response?.status ?? null
+function toNonEmptyString(value: unknown) {
+  return toNullableString(value) ?? ""
+}
+
+function parsePermissionKey(value: string | null) {
+  if (!value || !value.includes(":")) {
+    return null
   }
 
-  return null
+  const [left, ...rest] = value.split(":")
+  const module = toNullableString(left)
+  const action = toNullableString(rest.join(":"))
+
+  if (!module || !action) {
+    return null
+  }
+
+  return { module, action }
+}
+
+function toKeyChunk(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
 }

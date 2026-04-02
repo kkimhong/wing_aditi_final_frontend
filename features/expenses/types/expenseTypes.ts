@@ -37,6 +37,7 @@ export const ExpenseResponseSchema = z.object({
   receiptUrl: z.string().nullable(),
   status: ExpenseStatusEnum,
   submittedBy: z.string(),
+  submittedByEmail: z.string().nullable().optional(),
   departmentName: z.string().nullable(),
   approvedBy: z.string().nullable(),
   approvedAt: z.string().nullable(),

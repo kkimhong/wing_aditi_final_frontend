@@ -14,15 +14,13 @@ export default function Page() {
   const handleLogin = (data: any) => {
     mutate(data, {
       onSuccess: (res) => {
-        const payload = res?.data ?? res
+        const payload = resolveAuthPayload(res)
         const token = payload?.token
         const tokenClaims =
           typeof token === "string" ? decodeJwtPayload(token) : null
 
         const permissions = extractPermissions(payload, tokenClaims)
-        const roleName = normalizeRoleName(
-          payload?.roleName ?? payload?.role ?? tokenClaims?.roleName ?? tokenClaims?.role
-        )
+        const roleName = normalizeRoleName(resolveRoleName(payload, tokenClaims))
         const departmentName =
           firstNonEmptyString(
             payload?.departmentName,
@@ -63,8 +61,14 @@ function normalizeRoleName(value: unknown): string | null {
     return null
   }
 
-  const role = value.trim()
-  return role.length > 0 ? role : null
+  const role = value.trim().toUpperCase()
+  const normalized = role.startsWith("ROLE_") ? role.slice(5) : role
+
+  if (normalized.length === 0) {
+    return null
+  }
+
+  return normalized
 }
 
 function extractPermissions(
@@ -74,35 +78,116 @@ function extractPermissions(
   const fromPayload = [
     ...toStringArray(payload?.permissions),
     ...toStringArray(payload?.authorities),
+    ...toStringArray(payload?.grants),
+    ...toStringArray(payload?.roles),
   ]
-
-  if (fromPayload.length > 0) {
-    return uniqueStrings(fromPayload)
-  }
 
   const fromToken = [
     ...toStringArray(tokenClaims?.permissions),
     ...toStringArray(tokenClaims?.authorities),
     ...toStringArray(tokenClaims?.scope),
     ...toStringArray(tokenClaims?.scopes),
+    ...toStringArray(tokenClaims?.roles),
+    ...toStringArray((tokenClaims as Record<string, unknown> | null)?.realm_access),
   ]
 
-  return uniqueStrings(fromToken)
+  const merged = uniqueStrings([...fromPayload, ...fromToken])
+  const scopedPermissions = merged.filter((item) => item.includes(":"))
+
+  return scopedPermissions.length > 0 ? scopedPermissions : merged
+}
+
+function resolveRoleName(
+  payload: Record<string, unknown> | null | undefined,
+  tokenClaims: Record<string, unknown> | null
+) {
+  const payloadRole = payload?.role
+  const claimRole = tokenClaims?.role
+  const payloadRoles = payload?.roles
+  const claimRoles = tokenClaims?.roles
+  const realmAccess = (tokenClaims as Record<string, unknown> | null)?.realm_access
+
+  const roleFromPayloadObject =
+    payloadRole && typeof payloadRole === "object"
+      ? firstNonEmptyString(
+          (payloadRole as Record<string, unknown>).name,
+          (payloadRole as Record<string, unknown>).code
+        )
+      : null
+
+  const roleFromClaimObject =
+    claimRole && typeof claimRole === "object"
+      ? firstNonEmptyString(
+          (claimRole as Record<string, unknown>).name,
+          (claimRole as Record<string, unknown>).code
+        )
+      : null
+
+  const roleFromPayloadRolesArray = extractRoleFromArray(payloadRoles)
+  const roleFromClaimRolesArray = extractRoleFromArray(claimRoles)
+  const roleFromRealmAccess =
+    realmAccess && typeof realmAccess === "object"
+      ? extractRoleFromArray((realmAccess as Record<string, unknown>).roles)
+      : null
+
+  return firstNonEmptyString(
+    payload?.roleName,
+    typeof payloadRole === "string" ? payloadRole : null,
+    roleFromPayloadObject,
+    roleFromPayloadRolesArray,
+    tokenClaims?.roleName,
+    typeof claimRole === "string" ? claimRole : null,
+    roleFromClaimObject,
+    roleFromClaimRolesArray,
+    roleFromRealmAccess
+  )
 }
 
 function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim()
+        }
+
+        if (item && typeof item === "object") {
+          const row = item as Record<string, unknown>
+          const moduleValue = firstNonEmptyString(row.module, row.resource)
+          const actionValue = firstNonEmptyString(row.action)
+
+          if (moduleValue && actionValue) {
+            return `${moduleValue}:${actionValue}`
+          }
+
+          const candidate = firstNonEmptyString(
+            row.authority,
+            row.permission,
+            row.key,
+            row.name,
+            row.code
+          )
+
+          return candidate ?? ""
+        }
+
+        return ""
+      })
       .filter(Boolean)
   }
 
   if (typeof value === "string") {
     return value
-      .split(" ")
+      .split(/[,\s]+/)
       .map((item) => item.trim())
       .filter(Boolean)
+  }
+
+  if (value && typeof value === "object") {
+    const row = value as Record<string, unknown>
+    return toStringArray(
+      row.permissions ?? row.authorities ?? row.scopes ?? row.scope ?? row.roles
+    )
   }
 
   return []
@@ -123,6 +208,79 @@ function firstNonEmptyString(...values: unknown[]) {
   }
 
   return null
+}
+
+function extractRoleFromArray(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+
+  for (const item of value) {
+    if (typeof item === "string") {
+      const role = item.trim()
+      if (role.length > 0) {
+        return role
+      }
+    }
+
+    if (item && typeof item === "object") {
+      const row = item as Record<string, unknown>
+      const role = firstNonEmptyString(row.name, row.code, row.role)
+      if (role) {
+        return role
+      }
+    }
+  }
+
+  return null
+}
+
+function resolveAuthPayload(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") {
+    return {}
+  }
+
+  const root = value as Record<string, unknown>
+  const level1 =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : null
+
+  if (looksLikeAuthPayload(level1)) {
+    return level1 as Record<string, unknown>
+  }
+
+  if (looksLikeAuthPayload(root)) {
+    return root
+  }
+
+  const level2 =
+    level1?.data && typeof level1.data === "object"
+      ? (level1.data as Record<string, unknown>)
+      : null
+
+  if (looksLikeAuthPayload(level2)) {
+    return level2 as Record<string, unknown>
+  }
+
+  return (level1 ?? root) as Record<string, unknown>
+}
+
+function looksLikeAuthPayload(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return false
+  }
+
+  const row = value as Record<string, unknown>
+
+  return Boolean(
+    row.token ||
+      row.email ||
+      row.roleName ||
+      row.role ||
+      row.permissions ||
+      row.authorities
+  )
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {

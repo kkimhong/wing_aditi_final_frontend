@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { RoleRequestSchema, type RoleRequest } from "../schema/roleSchema"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -15,18 +16,21 @@ interface RoleFormProps {
   isLoading?: boolean
 }
 
+type RoleFormValues = z.input<typeof RoleRequestSchema>
+
 export function RoleForm({ onSubmit, defaultValues, isLoading }: RoleFormProps) {
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<RoleRequest>({
+  } = useForm<RoleFormValues, unknown, RoleRequest>({
     resolver: zodResolver(RoleRequestSchema),
     defaultValues: {
       name: defaultValues?.name ?? "",
       description: defaultValues?.description ?? "",
       priority: defaultValues?.priority ?? 0,
+      permissionIds: defaultValues?.permissionIds ?? [],
     },
   })
 
@@ -35,6 +39,7 @@ export function RoleForm({ onSubmit, defaultValues, isLoading }: RoleFormProps) 
       name: defaultValues?.name ?? "",
       description: defaultValues?.description ?? "",
       priority: defaultValues?.priority ?? 0,
+      permissionIds: defaultValues?.permissionIds ?? [],
     })
   }, [defaultValues, reset])
 

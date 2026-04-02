@@ -1,5 +1,5 @@
 import { LoginRequest } from "../types/authType"
-import { api } from "@/lib/axios"
+import { api, getApiErrorMessage } from "@/lib/axios"
 
 export const authApi = async (data: LoginRequest) => {
   try {
@@ -7,6 +7,15 @@ export const authApi = async (data: LoginRequest) => {
     return response.data
   } catch (error: any) {
     const message = error.response?.data?.message || "Login failed"
+    throw new Error(message)
+  }
+}
+
+export const logoutApi = async () => {
+  try {
+    await api.post("/auth/logout")
+  } catch (error: unknown) {
+    const message = getApiErrorMessage(error, "Logout failed")
     throw new Error(message)
   }
 }

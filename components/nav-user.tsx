@@ -20,7 +20,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { logoutApi } from "@/features/auth/api/authApi"
+import { useAuthStore } from "@/store/authStore"
+import { useQueryClient } from "@tanstack/react-query"
 import { ChevronsUpDownIcon, SparklesIcon, BadgeCheckIcon, CreditCardIcon, BellIcon, LogOutIcon } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 export function NavUser({
   user,
@@ -32,6 +37,35 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+  const router = useRouter()
+  const { clearAuth } = useAuthStore()
+  const queryClient = useQueryClient()
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  const handleLogout = async () => {
+    if (isLoggingOut) {
+      return
+    }
+
+    setIsLoggingOut(true)
+
+    try {
+      await logoutApi()
+    } catch {
+      // Even if backend logout fails, clear local auth to complete sign out UX.
+    } finally {
+      queryClient.clear()
+      clearAuth()
+      useAuthStore.persist.clearStorage()
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("auth-storage")
+      }
+      router.replace("/login")
+      router.refresh()
+      setIsLoggingOut(false)
+    }
+  }
+
 
   return (
     <SidebarMenu>
@@ -74,34 +108,23 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <SparklesIcon
-                />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheckIcon
-                />
+                <BadgeCheckIcon />
                 Account
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <CreditCardIcon
-                />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <BellIcon
-                />
+                <BellIcon />
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOutIcon
-              />
-              Log out
+            <DropdownMenuItem
+              disabled={isLoggingOut}
+              onSelect={() => {
+                void handleLogout()
+              }}
+            >
+              <LogOutIcon />
+              {isLoggingOut ? "Logging out..." : "Log out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

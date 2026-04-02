@@ -46,7 +46,7 @@ export function AssignPermissionsForm({
     reset({ permissionIds: currentPermissionIds })
   }, [currentPermissionIds, reset])
 
-  const selectedIds = watch("permissionIds") ?? []
+  const selectedIds = (watch("permissionIds") ?? []) as string[]
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   const filteredPermissions = useMemo(() => {
@@ -83,7 +83,7 @@ export function AssignPermissionsForm({
   }
 
   const togglePermission = (permissionId: string, checked: boolean) => {
-    const next = new Set(selectedSet)
+    const next = new Set<string>(selectedSet)
 
     if (checked) {
       next.add(permissionId)
@@ -95,7 +95,7 @@ export function AssignPermissionsForm({
   }
 
   const toggleModule = (modulePermissions: PermissionResponse[], checked: boolean) => {
-    const next = new Set(selectedSet)
+    const next = new Set<string>(selectedSet)
 
     for (const permission of modulePermissions) {
       if (checked) {
