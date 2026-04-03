@@ -54,23 +54,26 @@ export default function RolesPage() {
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [pendingDeleteRoleId, setPendingDeleteRoleId] = useState<string | null>(null)
-  const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null)
-
+  const [pendingDeleteRoleId, setPendingDeleteRoleId] = useState<string | null>(
+    null
+  )
+  const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(
+    null
+  )
   const editingRole = roles.find((r) => r.id === editingRoleId) ?? null
-  const pendingDeleteRole = roles.find((r) => r.id === pendingDeleteRoleId) ?? null
+  const pendingDeleteRole =
+    roles.find((r) => r.id === pendingDeleteRoleId) ?? null
+  const term = searchQuery.trim().toLowerCase()
 
-  const filteredRoles = useMemo(() => {
-    const term = searchQuery.trim().toLowerCase()
-    return roles
-      .filter(
-        (role) =>
-          !term ||
-          role.name.toLowerCase().includes(term) ||
-          (role.description ?? "").toLowerCase().includes(term)
-      )
-      .sort((a, b) => b.priority - a.priority)
-  }, [roles, searchQuery])
+  const filteredRoles = roles
+    .filter(
+      (role) =>
+        !term ||
+        role.name.toLowerCase().includes(term) ||
+        (role.description ?? "").toLowerCase().includes(term)
+    )
+    .slice()
+    .sort((a, b) => b.priority - a.priority)
 
   const permissionCatalogSize = Object.values(PERMISSIONS).length
 
@@ -125,7 +128,10 @@ export default function RolesPage() {
 
   const getDeleteBlockedReason = (role: RoleResponse) => {
     const normalizedRoleName = role.name.trim().toLowerCase()
-    if (normalizedRoleName === "administrator" || normalizedRoleName === "admin") {
+    if (
+      normalizedRoleName === "administrator" ||
+      normalizedRoleName === "admin"
+    ) {
       return "Administrator role is protected and cannot be deleted."
     }
 
@@ -291,7 +297,10 @@ export default function RolesPage() {
         onEdit={canUpdate ? openEdit : undefined}
         onManagePermissions={
           canUpdate
-            ? (role) => router.push(`/settings/roles/${encodeURIComponent(role.id)}/permissions`)
+            ? (role) =>
+                router.push(
+                  `/settings/roles/${encodeURIComponent(role.id)}/permissions`
+                )
             : undefined
         }
         onDelete={canDelete ? requestDelete : undefined}
@@ -330,9 +339,12 @@ export default function RolesPage() {
                     description: editingRole.description,
                     priority: editingRole.priority,
                     permissionIds:
-                      editingRole.permissionIds && editingRole.permissionIds.length > 0
+                      editingRole.permissionIds &&
+                      editingRole.permissionIds.length > 0
                         ? editingRole.permissionIds
-                        : editingRole.permissions.map((permission) => permission.id),
+                        : editingRole.permissions.map(
+                            (permission) => permission.id
+                          ),
                   }
                 : undefined
             }
@@ -343,7 +355,10 @@ export default function RolesPage() {
       <DeleteRoleDialog
         open={deleteDialogOpen}
         role={pendingDeleteRole}
-        blockedReason={deleteBlockedReason ?? (pendingDeleteRole ? getDeleteBlockedReason(pendingDeleteRole) : null)}
+        blockedReason={
+          deleteBlockedReason ??
+          (pendingDeleteRole ? getDeleteBlockedReason(pendingDeleteRole) : null)
+        }
         isDeleting={deleteRoleMutation.isPending}
         onOpenChange={(open) => {
           setDeleteDialogOpen(open)

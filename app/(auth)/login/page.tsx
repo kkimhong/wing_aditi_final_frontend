@@ -11,7 +11,7 @@ export default function Page() {
 
   const { mutate, isPending } = useLogin()
 
-  const handleLogin = (data: any) => {
+  const handleLogin = (data: unknown) => {
     mutate(data, {
       onSuccess: (res) => {
         const payload = resolveAuthPayload(res)
@@ -38,7 +38,7 @@ export default function Page() {
 
         router.push("/dashboard")
       },
-      onError: (err: any) => {
+      onError: (err: unknown) => {
         console.error("Login failed:", err)
       },
     })
@@ -67,7 +67,7 @@ function normalizeRoleName(value: unknown): string | null {
 }
 
 function extractPermissions(
-  payload: any,
+  payload: unknown,
   tokenClaims: Record<string, unknown> | null
 ) {
   const fromPayload = [
