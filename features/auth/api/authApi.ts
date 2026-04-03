@@ -5,7 +5,7 @@ export const authApi = async (data: LoginRequest) => {
   try {
     const response = await api.post("/auth/login", data)
     return response.data
-  } catch (error: any) {
+  } catch (error: unknown) {
     const message = error.response?.data?.message || "Login failed"
     throw new Error(message)
   }

@@ -71,17 +71,12 @@ function extractPermissions(
   tokenClaims: Record<string, unknown> | null
 ) {
   const fromPayload = [
-    ...toStringArray(payload?.permissions),
-    ...toStringArray(payload?.authorities),
-    ...toStringArray(payload?.grants),
+    ...collectPermissionValues(payload),
     ...toStringArray(payload?.roles),
   ]
 
   const fromToken = [
-    ...toStringArray(tokenClaims?.permissions),
-    ...toStringArray(tokenClaims?.authorities),
-    ...toStringArray(tokenClaims?.scope),
-    ...toStringArray(tokenClaims?.scopes),
+    ...collectPermissionValues(tokenClaims),
     ...toStringArray(tokenClaims?.roles),
     ...toStringArray((tokenClaims as Record<string, unknown> | null)?.realm_access),
   ]
@@ -90,6 +85,28 @@ function extractPermissions(
   const scopedPermissions = merged.filter((item) => item.includes(":"))
 
   return scopedPermissions.length > 0 ? scopedPermissions : merged
+}
+
+function collectPermissionValues(value: unknown, depth = 0): string[] {
+  if (!value || typeof value !== "object" || depth > 2) {
+    return []
+  }
+
+  const row = value as Record<string, unknown>
+
+  const direct = [
+    ...toStringArray(row.permissions),
+    ...toStringArray(row.authorities),
+    ...toStringArray(row.grants),
+    ...toStringArray(row.scope),
+    ...toStringArray(row.scopes),
+  ]
+
+  const nested = [row.role, row.user, row.account, row.profile, row.data].flatMap(
+    (candidate) => collectPermissionValues(candidate, depth + 1)
+  )
+
+  return uniqueStrings([...direct, ...nested])
 }
 
 function resolveRoleName(
@@ -184,22 +201,41 @@ function toStringArray(value: unknown): string[] {
     return value
       .map((item) => {
         if (typeof item === "string") {
-          return item.trim()
+          const trimmed = item.trim()
+          if (!trimmed) {
+            return ""
+          }
+
+          return trimmed.includes(":")
+            ? normalizeScopedPermission(trimmed)
+            : trimmed
         }
 
         if (item && typeof item === "object") {
           const row = item as Record<string, unknown>
+          const scopedPermission = firstNonEmptyString(
+            row.key,
+            row.authority,
+            row.permission,
+            row.scope,
+            row.code
+          )
+
+          if (scopedPermission && scopedPermission.includes(":")) {
+            return normalizeScopedPermission(scopedPermission)
+          }
+
           const moduleValue = firstNonEmptyString(row.module, row.resource)
           const actionValue = firstNonEmptyString(row.action)
 
           if (moduleValue && actionValue) {
-            return `${moduleValue}:${actionValue}`
+            return `${normalizePermissionChunk(moduleValue)}:${normalizePermissionChunk(actionValue)}`
           }
 
           const candidate = firstNonEmptyString(
+            row.key,
             row.authority,
             row.permission,
-            row.key,
             row.name,
             row.code
           )
@@ -216,6 +252,7 @@ function toStringArray(value: unknown): string[] {
     return value
       .split(/[,\s]+/)
       .map((item) => item.trim())
+      .map((item) => (item.includes(":") ? normalizeScopedPermission(item) : item))
       .filter(Boolean)
   }
 
@@ -227,6 +264,24 @@ function toStringArray(value: unknown): string[] {
   }
 
   return []
+}
+
+function normalizeScopedPermission(value: string) {
+  const [moduleValue, ...actionParts] = value.split(":")
+  const actionValue = actionParts.join(":")
+
+  if (!moduleValue || !actionValue) {
+    return value.trim().toLowerCase()
+  }
+
+  return `${normalizePermissionChunk(moduleValue)}:${normalizePermissionChunk(actionValue)}`
+}
+
+function normalizePermissionChunk(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_")
 }
 
 function uniqueStrings(values: string[]) {

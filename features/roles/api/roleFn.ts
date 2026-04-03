@@ -73,18 +73,46 @@ export const assignRolePermissionsFn = async (
 
   try {
     await api.put(`/roles/${roleId}/permissions`, requestBody)
-  } catch (firstError: unknown) {
+    return
+  } catch (putError: unknown) {
+    if (!shouldRetryAssignPermissionsWithPost(putError)) {
+      throw new Error(
+        getApiErrorMessage(putError, "Failed to assign role permissions")
+      )
+    }
+
     try {
       await api.post(`/roles/${roleId}/permissions`, requestBody)
-    } catch (secondError: unknown) {
+      return
+    } catch (postError: unknown) {
       throw new Error(
         getApiErrorMessage(
-          secondError ?? firstError,
+          postError ?? putError,
           "Failed to assign role permissions"
         )
       )
     }
   }
+}
+
+function shouldRetryAssignPermissionsWithPost(error: unknown) {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return true
+  }
+
+  const status = (
+    error as {
+      response?: {
+        status?: unknown
+      }
+    }
+  ).response?.status
+
+  if (typeof status !== "number") {
+    return true
+  }
+
+  return status === 404 || status === 405 || status === 501
 }
 
 function normalizeRole(raw: unknown): RoleResponse | null {
@@ -146,8 +174,11 @@ function normalizePermission(raw: unknown): PermissionResponse | null {
   const parsedFromKey = parsePermissionKey(rawKey)
   const parsedFromAction = parsePermissionKey(rawAction)
 
-  const module =
-    rawModule ?? parsedFromKey?.module ?? parsedFromAction?.module ?? "General"
+  const moduleName =
+    rawModule ??
+    parsedFromKey?.module ??
+    parsedFromAction?.module ??
+    "General"
   const action =
     (parsedFromKey?.action ?? parsedFromAction?.action ?? rawAction)?.trim() ?? ""
 
@@ -155,7 +186,7 @@ function normalizePermission(raw: unknown): PermissionResponse | null {
     return null
   }
 
-  const key = rawKey ?? `${toKeyChunk(module)}:${toKeyChunk(action)}`
+  const key = rawKey ?? `${toKeyChunk(moduleName)}:${toKeyChunk(action)}`
   const id =
     toNullableString(row.id) ??
     toNullableString(row.permissionId ?? row.permission_id) ??
@@ -163,7 +194,7 @@ function normalizePermission(raw: unknown): PermissionResponse | null {
 
   return {
     id,
-    module,
+    module: moduleName,
     action,
     key,
   }
@@ -295,14 +326,14 @@ function parsePermissionKey(value: string | null) {
   }
 
   const [left, ...rest] = value.split(":")
-  const module = toNullableString(left)
+  const moduleName = toNullableString(left)
   const action = toNullableString(rest.join(":"))
 
-  if (!module || !action) {
+  if (!moduleName || !action) {
     return null
   }
 
-  return { module, action }
+  return { module: moduleName, action }
 }
 
 function toKeyChunk(value: string) {
