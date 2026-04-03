@@ -3,6 +3,8 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
+import type { AxiosError } from "axios"
+import { getApiErrorMessage } from "@/lib/axios"
 import {
   approveExpenseFn,
   departmentExpensesQueryKey,
@@ -16,10 +18,26 @@ import {
 import type { ExpenseFilter } from "@/features/expenses/schema/expenseSchema"
 import type { RejectApprovalRequest } from "../schema/approvalSchema"
 
+type MutationErrorHandler = (message: string) => void
+type ApprovalApiErrorBody = {
+  message?: string
+  error?: string
+}
+
+type ApprovalMutationError = AxiosError<ApprovalApiErrorBody> | Error
+
+type ApproveMutationOptions = {
+  onError?: MutationErrorHandler
+}
+
+type RejectMutationOptions = {
+  onError?: MutationErrorHandler
+}
+
 export const useApprovalExpenses = (enabled = true, canManageAll = false) => {
   return useQuery({
-    queryKey: ["expenses", canManageAll ? "all" : "department"],
-    queryFn: () => (canManageAll ? getAllExpensesFn() : getDepartmentExpensesFn()),
+    queryKey: ["expenses", "pending", canManageAll ? "all" : "scoped"],
+    queryFn: () => getPendingExpensesFn(),
     staleTime: 60_000,
     enabled,
   })
@@ -64,22 +82,44 @@ export const useExpenseDetails = (id: string | null, enabled = true) => {
   })
 }
 
-export const useApproveExpense = () => {
+export const useApproveExpense = (options?: ApproveMutationOptions) => {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useMutation<void, ApprovalMutationError, string>({
     mutationFn: (id: string) => approveExpenseFn(id),
     onSuccess: () => invalidateExpenses(queryClient),
+    onError: (error) => {
+      const message = getApiErrorMessage(
+        error,
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to approve expense"
+      )
+      options?.onError?.(message)
+    },
   })
 }
 
-export const useRejectExpense = () => {
+export const useRejectExpense = (options?: RejectMutationOptions) => {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useMutation<
+    void,
+    ApprovalMutationError,
+    { id: string; payload: RejectApprovalRequest }
+  >({
     mutationFn: ({ id, payload }: { id: string; payload: RejectApprovalRequest }) =>
       rejectExpenseFn(id, payload),
     onSuccess: () => invalidateExpenses(queryClient),
+    onError: (error) => {
+      const message = getApiErrorMessage(
+        error,
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to reject expense"
+      )
+      options?.onError?.(message)
+    },
   })
 }
 

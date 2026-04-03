@@ -116,17 +116,17 @@ const allNavMain: NavItem[] = [
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { email, permissions, roleName } = useAuthStore()
+  const { email, permissions, roleName, expenseScope } = useAuthStore()
 
   const can = React.useCallback(
     (requiredPermissions: readonly string[]) =>
       hasAnyPermission(roleName, permissions, requiredPermissions),
-    [permissions, roleName]
+    [permissions, roleName, expenseScope]
   )
 
   const canManageAll = React.useMemo(
-    () => canManageAllApprovals(roleName, permissions),
-    [permissions, roleName]
+    () => canManageAllApprovals(roleName, permissions, expenseScope),
+    [permissions, roleName, expenseScope]
   )
 
   const canViewApprovals = can(ACCESS_RULES.viewApprovals)
@@ -213,3 +213,4 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     </Sidebar>
   )
 }
+

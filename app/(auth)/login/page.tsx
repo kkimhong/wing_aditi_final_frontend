@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { LoginForm } from "@/features/auth/components/LoginForm"
 import { useLogin } from "@/features/auth/hook/useLogin"
-import { useAuthStore } from "@/store/authStore"
+import { useAuthStore, type ExpenseScope } from "@/store/authStore"
 
 export default function Page() {
   const router = useRouter()
@@ -21,13 +21,8 @@ export default function Page() {
 
         const permissions = extractPermissions(payload, tokenClaims)
         const roleName = normalizeRoleName(resolveRoleName(payload, tokenClaims))
-        const departmentName =
-          firstNonEmptyString(
-            payload?.departmentName,
-            payload?.department,
-            tokenClaims?.departmentName,
-            tokenClaims?.department
-          ) ?? null
+        const departmentName = resolveDepartmentName(payload, tokenClaims)
+        const expenseScope = resolveExpenseScope(payload, tokenClaims)
 
         const email =
           firstNonEmptyString(
@@ -38,7 +33,7 @@ export default function Page() {
           ) ?? null
 
         if (email) {
-          setAuth(email, permissions, roleName, departmentName)
+          setAuth(email, permissions, roleName, departmentName, expenseScope)
         }
 
         router.push("/dashboard")
@@ -143,6 +138,47 @@ function resolveRoleName(
   )
 }
 
+function resolveExpenseScope(
+  payload: Record<string, unknown> | null | undefined,
+  tokenClaims: Record<string, unknown> | null
+): ExpenseScope | null {
+  const rawScope = firstNonEmptyString(payload?.expenseScope, tokenClaims?.expenseScope)
+  if (!rawScope) {
+    return null
+  }
+
+  const normalized = rawScope.trim().toUpperCase()
+  if (normalized === "COMPANY" || normalized === "DEPARTMENT") {
+    return normalized
+  }
+
+  return null
+}
+function resolveDepartmentName(
+  payload: Record<string, unknown> | null | undefined,
+  tokenClaims: Record<string, unknown> | null
+) {
+  const payloadDepartment = extractDepartmentName(payload?.department)
+  const tokenDepartment = extractDepartmentName(tokenClaims?.department)
+
+  return (
+    firstNonEmptyString(
+      payload?.departmentName,
+      payloadDepartment,
+      tokenClaims?.departmentName,
+      tokenDepartment
+    ) ?? null
+  )
+}
+
+function extractDepartmentName(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const row = value as Record<string, unknown>
+  return firstNonEmptyString(row.name, row.departmentName)
+}
 function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
@@ -304,3 +340,10 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
     return null
   }
 }
+
+
+
+
+
+
+

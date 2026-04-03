@@ -8,7 +8,8 @@ import { AllExpensesFilters, type AllExpensesFiltersState } from "./AllExpensesF
 import { AllExpensesSummaryCards } from "./AllExpensesSummaryCards"
 import { useAuthStore } from "@/store/authStore"
 import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
-import { useAllExpenses } from "@/features/approvals/hook/useApproval"
+import { useAllExpenses, useDepartmentExpenses } from "@/features/approvals/hook/useApproval"
+import { canManageAllApprovals } from "@/features/approvals/lib/approvalAccess"
 
 const initialFilters: AllExpensesFiltersState = {
   search: "",
@@ -20,13 +21,27 @@ const initialFilters: AllExpensesFiltersState = {
 }
 
 export function AllExpensesPage() {
-  const { permissions, roleName } = useAuthStore()
+  const { permissions, roleName, expenseScope } = useAuthStore()
   const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewAllExpenses)
+  const canManageAll = canManageAllApprovals(roleName, permissions, expenseScope)
 
   const [filters, setFilters] = useState<AllExpensesFiltersState>(initialFilters)
-  const { data: fetchedExpenses, isLoading, error } = useAllExpenses(canViewPage)
+  const {
+    data: fetchedAllExpenses,
+    isLoading: isLoadingAll,
+    error: allError,
+  } = useAllExpenses(canViewPage && canManageAll)
+  const {
+    data: fetchedDepartmentExpenses,
+    isLoading: isLoadingDepartment,
+    error: departmentError,
+  } = useDepartmentExpenses(canViewPage && !canManageAll)
 
-  const allExpenses = fetchedExpenses ?? []
+  const allExpenses = canManageAll
+    ? fetchedAllExpenses ?? []
+    : fetchedDepartmentExpenses ?? []
+  const isLoading = canManageAll ? isLoadingAll : isLoadingDepartment
+  const error = canManageAll ? allError : departmentError
 
   const departments = useMemo(() => {
     const values = new Set(
@@ -108,6 +123,12 @@ export function AllExpensesPage() {
 
   return (
     <DashboardLayout title="All Expenses">
+      <div className="rounded-none border bg-card p-3 text-xs text-muted-foreground">
+        {canManageAll
+          ? "Scope: company-wide expenses"
+          : "Scope: your department expenses"}
+      </div>
+
       <AllExpensesSummaryCards expenses={filteredExpenses} />
 
       {isLoading && allExpenses.length === 0 ? (
@@ -143,3 +164,4 @@ export function AllExpensesPage() {
     </DashboardLayout>
   )
 }
+

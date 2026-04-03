@@ -4,18 +4,10 @@ import type { PermissionKey } from "@/types/common"
 export { PERMISSIONS }
 export type { PermissionKey }
 
-const ADMIN_ROLE_NAMES = new Set([
-  "ADMIN",
-  "ADMINISTRATOR",
-  "SUPER_ADMIN",
-  "SUPERADMIN",
-  "OWNER",
-])
-
 export const ACCESS_RULES = {
   viewMyExpenses: [PERMISSIONS.EXPENSES_READ_OWN],
   createExpense: [PERMISSIONS.EXPENSES_CREATE],
-  submitExpense: [PERMISSIONS.EXPENSES_SUBMIT],
+  submitExpense: [PERMISSIONS.EXPENSES_SUBMIT, PERMISSIONS.EXPENSES_CREATE],
   viewApprovals: [
     PERMISSIONS.EXPENSES_APPROVE,
     PERMISSIONS.EXPENSES_APPROVE_OWN,
@@ -55,12 +47,8 @@ export const ACCESS_RULES = {
 } as const satisfies Record<string, readonly PermissionKey[]>
 
 export function isAdminRole(roleName: string | null | undefined) {
-  if (typeof roleName !== "string") {
-    return false
-  }
-
-  const normalized = normalizeRoleName(roleName)
-  return ADMIN_ROLE_NAMES.has(normalized)
+  void roleName
+  return false
 }
 
 export function hasPermission(
@@ -68,11 +56,9 @@ export function hasPermission(
   permissions: readonly string[] | null | undefined,
   requiredPermission: string
 ) {
-  if (!requiredPermission) {
-    return true
-  }
+  void roleName
 
-  if (isAdminRole(roleName)) {
+  if (!requiredPermission) {
     return true
   }
 
@@ -89,11 +75,9 @@ export function hasAnyPermission(
   permissions: readonly string[] | null | undefined,
   requiredPermissions: readonly string[] | null | undefined
 ) {
-  if (!requiredPermissions || requiredPermissions.length === 0) {
-    return true
-  }
+  void roleName
 
-  if (isAdminRole(roleName)) {
+  if (!requiredPermissions || requiredPermissions.length === 0) {
     return true
   }
 
@@ -109,11 +93,9 @@ export function hasAllPermissions(
   permissions: readonly string[] | null | undefined,
   requiredPermissions: readonly string[] | null | undefined
 ) {
-  if (!requiredPermissions || requiredPermissions.length === 0) {
-    return true
-  }
+  void roleName
 
-  if (isAdminRole(roleName)) {
+  if (!requiredPermissions || requiredPermissions.length === 0) {
     return true
   }
 
@@ -128,10 +110,7 @@ export function canManageAllExpenses(
   roleName: string | null | undefined,
   permissions: readonly string[] | null | undefined
 ) {
-  return hasAnyPermission(roleName, permissions, [
-    PERMISSIONS.EXPENSES_APPROVE,
-    PERMISSIONS.EXPENSES_READ_ALL,
-  ])
+  return hasPermission(roleName, permissions, PERMISSIONS.EXPENSES_READ_ALL)
 }
 
 export function canAccessSettings(
@@ -145,11 +124,6 @@ export function canAccessSettings(
     ...ACCESS_RULES.deleteDepartments,
     ...ACCESS_RULES.manageRoles,
   ])
-}
-
-function normalizeRoleName(value: string) {
-  const role = value.trim().toUpperCase()
-  return role.startsWith("ROLE_") ? role.slice(5) : role
 }
 
 function toPermissionSet(values: readonly string[] | null | undefined) {

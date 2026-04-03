@@ -9,13 +9,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuthStore } from "@/store/authStore"
 import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 import { useMyExpenses } from "@/features/expenses/hook/useExpense"
-import { useAllExpenses, useApprovalExpenses } from "@/features/approvals/hook/useApproval"
+import {
+  useAllExpenses,
+  useApprovalExpenses,
+  useDepartmentExpenses,
+} from "@/features/approvals/hook/useApproval"
 import { canManageAllApprovals } from "@/features/approvals/lib/approvalAccess"
 import { ExpenseStatusBadge } from "@/features/expenses/components/ExpenseStatusBadge"
 import type { ExpenseResponse } from "@/features/expenses/schema/expenseSchema"
 
 export function DashboardPage() {
-  const { permissions, roleName, departmentName } = useAuthStore()
+  const { permissions, roleName, departmentName, expenseScope } = useAuthStore()
 
   const canViewMyExpenses = hasAnyPermission(
     roleName,
@@ -35,8 +39,8 @@ export function DashboardPage() {
   const canViewReports = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewReports)
 
   const canManageAll = useMemo(
-    () => canManageAllApprovals(roleName, permissions),
-    [permissions, roleName]
+    () => canManageAllApprovals(roleName, permissions, expenseScope),
+    [permissions, roleName, expenseScope]
   )
 
   const {
@@ -50,10 +54,21 @@ export function DashboardPage() {
     error: approvalExpensesError,
   } = useApprovalExpenses(canViewApprovals, canManageAll)
   const {
-    data: allExpenses = [],
-    isLoading: isLoadingAllExpenses,
-    error: allExpensesError,
-  } = useAllExpenses(canViewAllExpenses)
+    data: allExpensesRaw = [],
+    isLoading: isLoadingAllExpensesRaw,
+    error: allExpensesErrorRaw,
+  } = useAllExpenses(canViewAllExpenses && canManageAll)
+  const {
+    data: departmentExpenses = [],
+    isLoading: isLoadingDepartmentExpenses,
+    error: departmentExpensesError,
+  } = useDepartmentExpenses(canViewAllExpenses && !canManageAll)
+
+  const allExpenses = canManageAll ? allExpensesRaw : departmentExpenses
+  const isLoadingAllExpenses = canManageAll
+    ? isLoadingAllExpensesRaw
+    : isLoadingDepartmentExpenses
+  const allExpensesError = canManageAll ? allExpensesErrorRaw : departmentExpensesError
 
   const visibleExpenses = canViewAllExpenses
     ? allExpenses
@@ -75,7 +90,12 @@ export function DashboardPage() {
   const summaryCards = useMemo(() => {
     const myTotal = myExpenses.reduce((sum, expense) => sum + expense.amount, 0)
     const draftCount = myExpenses.filter((expense) => expense.status === "DRAFT").length
-    const visibleTotal = visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+    const visibleTotal = visibleExpenses
+      .filter(
+        (expense) =>
+          expense.status === "SUBMITTED" || expense.status === "APPROVED"
+      )
+      .reduce((sum, expense) => sum + expense.amount, 0)
     const rejectedCount = visibleExpenses.filter(
       (expense) => expense.status === "REJECTED"
     ).length
@@ -98,7 +118,7 @@ export function DashboardPage() {
       {
         title: canViewAllExpenses ? "Company Spend" : "Visible Spend",
         value: formatCurrency(visibleTotal),
-        helper: `${visibleExpenses.length} records`,
+        helper: "Submitted + approved",
         icon: Wallet,
       },
       {
@@ -122,7 +142,9 @@ export function DashboardPage() {
     (canViewAllExpenses && isLoadingAllExpenses && allExpenses.length === 0)
 
   const scopeLabel = canViewAllExpenses
-    ? "Company-wide visibility"
+    ? canManageAll
+      ? "Company-wide visibility"
+      : "Department visibility"
     : canViewApprovals
       ? canManageAll
         ? "Company approvals scope"
@@ -264,4 +286,5 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 0,
   }).format(value)
 }
+
 

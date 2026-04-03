@@ -11,56 +11,44 @@ export const api = axios.create({
   },
 })
 
-export function getApiErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (
-      error as {
-        response?: {
-          data?: {
-            message?: string
-            error?: string
-          }
-        }
-      }
-    ).response?.data?.message === "string"
-  ) {
-    return (
-      error as {
-        response?: {
-          data?: {
-            message?: string
-          }
-        }
-      }
-    ).response?.data?.message as string
+type ApiErrorResponseBody = {
+  message?: string
+  error?: string
+}
+
+function getResponseMessage(data: unknown) {
+  if (!data || typeof data !== "object") {
+    return null
   }
 
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (
-      error as {
-        response?: {
-          data?: {
-            error?: string
+  const body = data as ApiErrorResponseBody
+
+  if (typeof body.message === "string" && body.message.trim().length > 0) {
+    return body.message.trim()
+  }
+
+  if (typeof body.error === "string" && body.error.trim().length > 0) {
+    return body.error.trim()
+  }
+
+  return null
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const message = getResponseMessage(
+      (
+        error as {
+          response?: {
+            data?: unknown
           }
         }
-      }
-    ).response?.data?.error === "string"
-  ) {
-    return (
-      error as {
-        response?: {
-          data?: {
-            error?: string
-          }
-        }
-      }
-    ).response?.data?.error as string
+      ).response?.data
+    )
+
+    if (message) {
+      return message
+    }
   }
 
   return fallback
@@ -71,6 +59,13 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       useAuthStore.getState().clearAuth()
+    }
+
+    if (error?.response?.status === 403) {
+      const message = getResponseMessage(error?.response?.data)
+      if (message && typeof error === "object" && error !== null) {
+        ;(error as { message?: string }).message = message
+      }
     }
 
     return Promise.reject(error)

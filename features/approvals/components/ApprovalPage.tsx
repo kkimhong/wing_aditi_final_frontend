@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AccessDenied } from "@/components/access-denied"
 import { ExpenseTable } from "@/features/expenses/components/ExpenseTable"
@@ -33,12 +33,13 @@ const initialFilters: ApprovalFiltersState = {
 }
 
 export function ApprovalPage() {
-  const { permissions, roleName, departmentName } = useAuthStore()
+  const { permissions, roleName, departmentName, expenseScope } = useAuthStore()
   const [filters, setFilters] = useState<ApprovalFiltersState>(initialFilters)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [detailsExpenseId, setDetailsExpenseId] = useState<string | null>(null)
+  const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null)
 
   const canViewPage = canAccessApprovalWorkspace(roleName, permissions)
   const canApprovePermission = hasAnyPermission(
@@ -53,18 +54,23 @@ export function ApprovalPage() {
   )
 
   const canManageAll = useMemo(
-    () => canManageAllApprovals(roleName, permissions),
-    [permissions, roleName]
+    () => canManageAllApprovals(roleName, permissions, expenseScope),
+    [permissions, roleName, expenseScope]
   )
 
-  const approverDepartment = departmentName ?? "Engineering"
+  const approverDepartment = sanitizeDepartmentName(departmentName)
+  const approverDepartmentLabel = approverDepartment ?? "your department"
 
   const { data: fetchedExpenses, isLoading, error } = useApprovalExpenses(
     canViewPage,
     canManageAll
   )
-  const approveExpenseMutation = useApproveExpense()
-  const rejectExpenseMutation = useRejectExpense()
+  const approveExpenseMutation = useApproveExpense({
+    onError: (message) => setActionErrorMessage(message),
+  })
+  const rejectExpenseMutation = useRejectExpense({
+    onError: (message) => setActionErrorMessage(message),
+  })
 
   const expenses = fetchedExpenses ?? []
   const selectedExpense =
@@ -78,17 +84,30 @@ export function ApprovalPage() {
     null
 
   const resetMutations = () => {
+    setActionErrorMessage(null)
     approveExpenseMutation.reset()
     rejectExpenseMutation.reset()
   }
 
+  useEffect(() => {
+    if (!actionErrorMessage) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setActionErrorMessage(null)
+    }, 5000)
+
+    return () => clearTimeout(timer)
+  }, [actionErrorMessage])
+
   const scopedExpenses = useMemo(() => {
-    if (canManageAll) {
+    if (canManageAll || !approverDepartment) {
       return expenses
     }
 
-    return expenses.filter(
-      (expense) => expense.departmentName === approverDepartment
+    return expenses.filter((expense) =>
+      isSameDepartment(expense.departmentName, approverDepartment)
     )
   }, [approverDepartment, canManageAll, expenses])
 
@@ -199,6 +218,12 @@ export function ApprovalPage() {
 
   return (
     <DashboardLayout title="Approvals">
+      {actionErrorMessage ? (
+        <div className="fixed right-4 top-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-none border border-destructive/40 bg-card p-4 text-sm text-destructive shadow-sm">
+          {actionErrorMessage}
+        </div>
+      ) : null}
+
       <section className="rounded-none border bg-gradient-to-r from-emerald-50 via-white to-amber-50 p-5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Approval workspace
@@ -222,7 +247,7 @@ export function ApprovalPage() {
         </div>
       ) : null}
 
-      {mutationErrorMessage ? (
+      {!actionErrorMessage && mutationErrorMessage ? (
         <div className="rounded-none border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {mutationErrorMessage}
         </div>
@@ -231,7 +256,7 @@ export function ApprovalPage() {
       <div className="rounded-none border bg-card p-3 text-xs text-muted-foreground">
         {canManageAll
           ? "You are viewing company-wide approvals."
-          : `You are viewing ${approverDepartment} approvals as a department manager.`}
+          : `You are viewing ${approverDepartmentLabel} approvals as a department manager.`}
       </div>
 
       <ApprovalFilters
@@ -323,3 +348,35 @@ export function ApprovalPage() {
     </DashboardLayout>
   )
 }
+
+
+function sanitizeDepartmentName(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const next = value.trim()
+  if (next.length === 0 || looksLikeUuid(next)) {
+    return null
+  }
+
+  return next
+}
+
+function isSameDepartment(left: string | null, right: string) {
+  if (!left) {
+    return false
+  }
+
+  return left.trim().toLowerCase() === right.trim().toLowerCase()
+}
+
+function looksLikeUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  )
+}
+
+
+
+

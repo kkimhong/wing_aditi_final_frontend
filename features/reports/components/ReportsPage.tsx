@@ -10,7 +10,11 @@ import type { ReportExpense, ReportFilters } from "../schema/reportSchema"
 import { useAuthStore } from "@/store/authStore"
 import { ACCESS_RULES, hasAnyPermission } from "@/lib/rbac"
 import { useMyExpenses } from "@/features/expenses/hook/useExpense"
-import { useAllExpenses, useApprovalExpenses } from "@/features/approvals/hook/useApproval"
+import {
+  useAllExpenses,
+  useApprovalExpenses,
+  useDepartmentExpenses,
+} from "@/features/approvals/hook/useApproval"
 import { canManageAllApprovals } from "@/features/approvals/lib/approvalAccess"
 
 const initialFilters: ReportFilters = {
@@ -23,7 +27,7 @@ const initialFilters: ReportFilters = {
 }
 
 export function ReportsPage() {
-  const { permissions, roleName } = useAuthStore()
+  const { permissions, roleName, expenseScope } = useAuthStore()
   const canViewPage = hasAnyPermission(roleName, permissions, ACCESS_RULES.viewReports)
   const canExport = hasAnyPermission(roleName, permissions, ACCESS_RULES.exportReports)
   const canViewAllExpenses = hasAnyPermission(
@@ -45,15 +49,20 @@ export function ReportsPage() {
   const [filters, setFilters] = useState<ReportFilters>(initialFilters)
 
   const canManageAll = useMemo(
-    () => canManageAllApprovals(roleName, permissions),
-    [permissions, roleName]
+    () => canManageAllApprovals(roleName, permissions, expenseScope),
+    [permissions, roleName, expenseScope]
   )
 
   const {
-    data: allExpenses = [],
-    isLoading: isLoadingAllExpenses,
-    error: allExpensesError,
-  } = useAllExpenses(canViewPage && canViewAllExpenses)
+    data: allExpensesRaw = [],
+    isLoading: isLoadingAllExpensesRaw,
+    error: allExpensesErrorRaw,
+  } = useAllExpenses(canViewPage && canViewAllExpenses && canManageAll)
+  const {
+    data: departmentExpenses = [],
+    isLoading: isLoadingDepartmentExpenses,
+    error: departmentExpensesError,
+  } = useDepartmentExpenses(canViewPage && canViewAllExpenses && !canManageAll)
   const {
     data: approvalExpenses = [],
     isLoading: isLoadingApprovalExpenses,
@@ -70,6 +79,12 @@ export function ReportsPage() {
     canViewPage && !canViewAllExpenses && !canViewApprovalScope && canViewMyExpenses
   )
 
+  const allExpenses = canManageAll ? allExpensesRaw : departmentExpenses
+  const isLoadingAllExpenses = canManageAll
+    ? isLoadingAllExpensesRaw
+    : isLoadingDepartmentExpenses
+  const allExpensesError = canManageAll ? allExpensesErrorRaw : departmentExpensesError
+
   const sourceExpenses: ReportExpense[] = canViewAllExpenses
     ? allExpenses
     : canViewApprovalScope
@@ -80,7 +95,9 @@ export function ReportsPage() {
     canViewAllExpenses || canViewApprovalScope || canViewMyExpenses
 
   const sourceLabel = canViewAllExpenses
-    ? "Company-wide expenses"
+    ? canManageAll
+      ? "Company-wide expenses"
+      : "Department expenses"
     : canViewApprovalScope
       ? canManageAll
         ? "Approval scope: all departments"
@@ -284,3 +301,5 @@ function getCurrentMonth() {
   const month = `${now.getMonth() + 1}`.padStart(2, "0")
   return `${now.getFullYear()}-${month}`
 }
+
+
