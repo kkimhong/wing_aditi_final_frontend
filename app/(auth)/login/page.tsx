@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation"
 import { LoginForm } from "@/features/auth/components/LoginForm"
 import { useLogin } from "@/features/auth/hook/useLogin"
+import type { LoginRequest } from "@/features/auth/types/authType"
 import { useAuthStore, type ExpenseScope } from "@/store/authStore"
 
 export default function Page() {
@@ -11,7 +12,7 @@ export default function Page() {
 
   const { mutate, isPending } = useLogin()
 
-  const handleLogin = (data: unknown) => {
+  const handleLogin = (data: LoginRequest) => {
     mutate(data, {
       onSuccess: (res) => {
         const payload = resolveAuthPayload(res)
@@ -67,7 +68,7 @@ function normalizeRoleName(value: unknown): string | null {
 }
 
 function extractPermissions(
-  payload: unknown,
+  payload: Record<string, unknown> | null | undefined,
   tokenClaims: Record<string, unknown> | null
 ) {
   const fromPayload = [
@@ -395,7 +396,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
     return null
   }
 }
-
 
 
 
