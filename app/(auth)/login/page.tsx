@@ -1,20 +1,25 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { LoginForm } from "@/features/auth/components/LoginForm"
 import { useLogin } from "@/features/auth/hook/useLogin"
 import type { LoginRequest } from "@/features/auth/types/authType"
+import { getApiErrorMessage } from "@/lib/axios"
 import { useAuthStore, type ExpenseScope } from "@/store/authStore"
 
 export default function Page() {
   const router = useRouter()
   const { setAuth } = useAuthStore()
+  const [loginError, setLoginError] = useState<string | null>(null)
 
   const { mutate, isPending } = useLogin()
 
   const handleLogin = (data: LoginRequest) => {
+    setLoginError(null)
     mutate(data, {
       onSuccess: (res) => {
+        setLoginError(null)
         const payload = resolveAuthPayload(res)
         const token = payload?.token
         const tokenClaims =
@@ -40,6 +45,8 @@ export default function Page() {
         router.push("/dashboard")
       },
       onError: (err: unknown) => {
+        const message = getApiErrorMessage(err, "Invalid email or password")
+        setLoginError(message)
         console.error("Login failed:", err)
       },
     })
@@ -47,7 +54,11 @@ export default function Page() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <LoginForm onSubmit={handleLogin} isLoading={isPending} />
+      <LoginForm
+        onSubmit={handleLogin}
+        isLoading={isPending}
+        errorMessage={loginError}
+      />
     </div>
   )
 }
@@ -396,7 +407,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
     return null
   }
 }
-
 
 
 

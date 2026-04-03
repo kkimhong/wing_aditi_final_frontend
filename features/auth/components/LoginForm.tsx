@@ -18,9 +18,10 @@ import { LoginRequest, LoginRequestSchema } from "../types/authType"
 interface LoginFormProps {
   onSubmit: (data: LoginRequest) => void
   isLoading?: boolean
+  errorMessage?: string | null
 }
 
-export function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
+export function LoginForm({ onSubmit, isLoading, errorMessage }: LoginFormProps) {
   const {
     register,
     handleSubmit,
@@ -79,6 +80,10 @@ export function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
               )}
             </div>
           </div>
+
+          {errorMessage && (
+            <p className="mt-4 text-sm text-destructive">{errorMessage}</p>
+          )}
         </CardContent>
 
         {/* ✅ Button now inside form */}

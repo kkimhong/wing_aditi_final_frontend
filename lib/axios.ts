@@ -1,7 +1,7 @@
 import axios from "axios"
 import { useAuthStore } from "@/store/authStore"
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1"
+const apiUrl = process.env.NEXT_PUBLIC_API_URL
 
 export const api = axios.create({
   baseURL: apiUrl,
