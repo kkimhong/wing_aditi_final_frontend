@@ -26,7 +26,9 @@ export default function Page() {
           typeof token === "string" ? decodeJwtPayload(token) : null
 
         const permissions = extractPermissions(payload, tokenClaims)
-        const roleName = normalizeRoleName(resolveRoleName(payload, tokenClaims))
+        const roleName = normalizeRoleName(
+          resolveRoleName(payload, tokenClaims)
+        )
         const departmentName = resolveDepartmentName(payload, tokenClaims)
         const expenseScope = resolveExpenseScope(payload, tokenClaims)
 
@@ -39,7 +41,14 @@ export default function Page() {
           ) ?? null
 
         if (email) {
-          setAuth(email, permissions, roleName, departmentName, expenseScope)
+          setAuth(
+            email,
+            typeof token === "string" ? token : null,
+            permissions,
+            roleName,
+            departmentName,
+            expenseScope
+          )
         }
 
         router.push("/dashboard")
@@ -90,7 +99,9 @@ function extractPermissions(
   const fromToken = [
     ...collectPermissionValues(tokenClaims),
     ...toStringArray(tokenClaims?.roles),
-    ...toStringArray((tokenClaims as Record<string, unknown> | null)?.realm_access),
+    ...toStringArray(
+      (tokenClaims as Record<string, unknown> | null)?.realm_access
+    ),
   ]
 
   const merged = uniqueStrings([...fromPayload, ...fromToken])
@@ -114,9 +125,13 @@ function collectPermissionValues(value: unknown, depth = 0): string[] {
     ...toStringArray(row.scopes),
   ]
 
-  const nested = [row.role, row.user, row.account, row.profile, row.data].flatMap(
-    (candidate) => collectPermissionValues(candidate, depth + 1)
-  )
+  const nested = [
+    row.role,
+    row.user,
+    row.account,
+    row.profile,
+    row.data,
+  ].flatMap((candidate) => collectPermissionValues(candidate, depth + 1))
 
   return uniqueStrings([...direct, ...nested])
 }
@@ -129,7 +144,8 @@ function resolveRoleName(
   const claimRole = tokenClaims?.role
   const payloadRoles = payload?.roles
   const claimRoles = tokenClaims?.roles
-  const realmAccess = (tokenClaims as Record<string, unknown> | null)?.realm_access
+  const realmAccess = (tokenClaims as Record<string, unknown> | null)
+    ?.realm_access
 
   const roleFromPayloadObject =
     payloadRole && typeof payloadRole === "object"
@@ -171,7 +187,10 @@ function resolveExpenseScope(
   payload: Record<string, unknown> | null | undefined,
   tokenClaims: Record<string, unknown> | null
 ): ExpenseScope | null {
-  const rawScope = firstNonEmptyString(payload?.expenseScope, tokenClaims?.expenseScope)
+  const rawScope = firstNonEmptyString(
+    payload?.expenseScope,
+    tokenClaims?.expenseScope
+  )
   if (!rawScope) {
     return null
   }
@@ -264,7 +283,9 @@ function toStringArray(value: unknown): string[] {
     return value
       .split(/[,\s]+/)
       .map((item) => item.trim())
-      .map((item) => (item.includes(":") ? normalizeScopedPermission(item) : item))
+      .map((item) =>
+        item.includes(":") ? normalizeScopedPermission(item) : item
+      )
       .filter(Boolean)
   }
 
@@ -297,7 +318,9 @@ function normalizePermissionChunk(value: string) {
 }
 
 function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean))
+  )
 }
 
 function firstNonEmptyString(...values: unknown[]) {
@@ -378,11 +401,11 @@ function looksLikeAuthPayload(value: unknown) {
 
   return Boolean(
     row.token ||
-      row.email ||
-      row.roleName ||
-      row.role ||
-      row.permissions ||
-      row.authorities
+    row.email ||
+    row.roleName ||
+    row.role ||
+    row.permissions ||
+    row.authorities
   )
 }
 
@@ -407,8 +430,3 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
     return null
   }
 }
-
-
-
-
-

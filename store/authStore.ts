@@ -5,12 +5,14 @@ export type ExpenseScope = "COMPANY" | "DEPARTMENT"
 
 interface AuthStore {
   email: string | null
+  token: string | null
   permissions: string[]
   roleName: string | null
   departmentName: string | null
   expenseScope: ExpenseScope | null
   setAuth: (
     email: string,
+    token: string | null,
     permissions: string[],
     roleName?: string | null,
     departmentName?: string | null,
@@ -24,6 +26,7 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       email: null,
+      token: null,
       permissions: [],
       roleName: null,
       departmentName: null,
@@ -31,6 +34,7 @@ export const useAuthStore = create<AuthStore>()(
 
       setAuth: (
         email,
+        token,
         permissions,
         roleName = null,
         departmentName = null,
@@ -38,6 +42,7 @@ export const useAuthStore = create<AuthStore>()(
       ) =>
         set({
           email,
+          token,
           permissions,
           roleName,
           departmentName,
@@ -47,6 +52,7 @@ export const useAuthStore = create<AuthStore>()(
       clearAuth: () => {
         set({
           email: null,
+          token: null,
           permissions: [],
           roleName: null,
           departmentName: null,
